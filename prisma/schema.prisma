@@ -1,0 +1,231 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Student {
+  id              String         @id @default(uuid())
+  firstName       String         @map("first_name")
+  lastName        String         @map("last_name")
+  email           String         @unique
+  dni             String         @unique
+  statusId        Int            @map("status_id")
+  roleId          Int            @map("role_id")
+  googleId        String?        @map("google_id")
+  profilePhotoUrl String?        @map("profile_photo_url")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  role            Role           @relation(fields: [roleId], references: [id])
+  studentDetail   StudentDetail?
+  studentCourses  StudentCourse[]
+
+  @@map("student")
+}
+
+model StudentDetail {
+  id            String    @id @default(uuid())
+  studentId     String    @unique @map("student_id")
+  address       String?
+  phone         String?
+  dob           DateTime?
+  extraPhone    String?   @map("extra_phone")
+  extraEmail    String?   @map("extra_email")
+  academicLevel String?   @map("academic_level")
+  gender        String?
+  nacionality   String?
+  dniCopy       String?   @map("dni_copy")
+  formCopy      String?   @map("form_copy")
+  titleCopy     String?   @map("title_copy")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  student       Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@map("student_detail")
+}
+
+model Course {
+  id               String            @id @default(uuid())
+  name             String
+  startDate        DateTime?         @map("start_date")
+  endDate          DateTime?         @map("end_date")
+  startTime        String?           @map("start_time")
+  endTime          String?           @map("end_time")
+  statusId         Int               @map("status_id")
+  staffId          String            @map("staff_id")
+  maxAbsences      Int               @map("max_absences")
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+
+  staff            Staff             @relation(fields: [staffId], references: [id])
+  courseDetail     CourseDetail?
+  studentCourses   StudentCourse[]
+  classroomCourses ClassroomCourse[]
+  courseDays       CourseDay[]
+
+  @@map("course")
+}
+
+model CourseDetail {
+  id              String   @id @default(uuid())
+  courseId        String   @unique @map("course_id")
+  description     String?
+  quota           Int
+  hourQuantity    Int      @map("hour_quantity")
+  classesQuantity Int      @map("classes_quantity")
+  titleRequired   Boolean  @default(false) @map("title_required")
+  endorsementBy   String?  @map("endorsement_by")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  course          Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@map("course_detail")
+}
+
+model StudentCourse {
+  id        String       @id @default(uuid())
+  studentId String       @map("student_id")
+  courseId  String       @map("course_id")
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("update_at")
+
+  student   Student      @relation(fields: [studentId], references: [id])
+  course    Course       @relation(fields: [courseId], references: [id])
+  attendances Attendance[]
+
+  @@unique([studentId, courseId])
+  @@map("student_course")
+}
+
+model ClassroomCourse {
+  id          String    @id @default(uuid())
+  courseId    String    @map("course_id")
+  classroomId Int       @map("classroom_id")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  course      Course    @relation(fields: [courseId], references: [id])
+  classroom   Classroom @relation(fields: [classroomId], references: [id])
+
+  @@unique([courseId, classroomId])
+  @@map("classroom_course")
+}
+
+model Day {
+  id         Int         @id @default(autoincrement())
+  name       String
+  courseDays CourseDay[]
+
+  @@map("day")
+}
+
+model CourseDay {
+  id       String @id @default(uuid())
+  dayId    Int    @map("day_id")
+  courseId String @map("course_id")
+
+  day      Day    @relation(fields: [dayId], references: [id])
+  course   Course @relation(fields: [courseId], references: [id])
+
+  @@unique([dayId, courseId])
+  @@map("course_day")
+}
+
+model Classroom {
+  id               Int               @id @default(autoincrement())
+  capacity         Int
+  name             String
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+  classroomCourses ClassroomCourse[]
+
+  @@map("classroom")
+}
+
+model Staff {
+  id              String       @id @default(uuid())
+  firstName       String       @map("first_name")
+  lastName        String       @map("last_name")
+  email           String       @unique
+  dni             String       @unique
+  statusId        Int          @map("status_id")
+  roleId          Int          @map("role_id")
+  googleId        String?      @map("google_id")
+  profilePhotoUrl String?      @map("profile_photo_url")
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  role            Role         @relation(fields: [roleId], references: [id])
+  staffDetail     StaffDetail?
+  courses         Course[]
+
+  @@map("staff")
+}
+
+model StaffDetail {
+  id          String    @id @default(uuid())
+  staffId     String    @unique @map("staff_id")
+  address     String?
+  phone       String?
+  dob         DateTime?
+  extraPhone  String?   @map("extra_phone")
+  extraEmail  String?   @map("extra_email")
+  gender      String?
+  nacionality String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  staff       Staff     @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@map("staff_detail")
+}
+
+model Role {
+  id        Int       @id @default(autoincrement())
+  name      String
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  students  Student[]
+  staffs    Staff[]
+
+  @@map("role")
+}
+
+model Attendance {
+  id               String         @id @default(uuid())
+  idStudentCourse  String         @map("id_student_course")
+  idCode           Int            @map("id_code")
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
+
+  studentCourse    StudentCourse  @relation(fields: [idStudentCourse], references: [id])
+  attendanceCode   AttendanceCode @relation(fields: [idCode], references: [id])
+
+  @@map("attendance")
+}
+
+model AttendanceCode {
+  id          Int          @id @default(autoincrement())
+  name        String
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  attendances Attendance[]
+
+  @@map("attendance_code")
+}
+
+model Setting {
+  id    Int    @id @default(autoincrement())
+  key   String @unique
+  value String
+
+  @@map("setting")
+}
