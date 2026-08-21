@@ -4,6 +4,7 @@ import cors from 'cors'
 import { PrismaClient } from '@prisma/client'
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 import AtendanceRouter from './routes/attendance.routes.js'
+import CourseRouter from './routes/course.routes.js'
 import { globalErrorHandler } from './middlewares/errorHandler.middlewares.js'
 
 const app = express()
@@ -25,6 +26,7 @@ app.get('/health', (req,res)=>{
 })
 
 app.use(AtendanceRouter)
+app.use(CourseRouter)
 
 app.use(globalErrorHandler)
 app.listen(PORT, ()=>{
