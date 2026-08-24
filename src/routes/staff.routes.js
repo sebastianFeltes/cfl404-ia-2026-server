@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { authenticateToken, authorizeRoles } from '../middlewares/auth.middlewares.js'
 import { validate } from '../middlewares/validate.middlewares.js'
 import { createStaffSchema, updateStaffSchema, idParamSchema } from '../schemas/staff.schemas.js'
 import {
@@ -25,12 +26,16 @@ StaffRouter.get(
 
 StaffRouter.post(
     '/api/v1/instructores',
+    authenticateToken,
+    authorizeRoles('ADMIN', 'DIRECTIVO'),
     validate(createStaffSchema, 'body'),
     createStaff
 )
 
 StaffRouter.put(
     '/api/v1/instructores/:id',
+    authenticateToken,
+    authorizeRoles('ADMIN', 'DIRECTIVO'),
     validate(idParamSchema, 'params'),
     validate(updateStaffSchema, 'body'),
     updateStaff

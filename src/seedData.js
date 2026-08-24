@@ -1,5 +1,5 @@
 // Archivo: src/seedData.js
-import prisma from './db.js'
+import prisma from './lib/prisma.js'
 
 export const MOCK_STUDENTS_SEED = [
   {

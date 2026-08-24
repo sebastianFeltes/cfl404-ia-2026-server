@@ -4,7 +4,7 @@ import cors from 'cors'
 import helmet from 'helmet'
 import morgan from 'morgan'
 import rateLimit from 'express-rate-limit'
-import prisma from './db.js'
+import authRouter from './routes/auth.routes.js'
 import AtendanceRouter from './routes/attendance.routes.js'
 import CourseRouter from './routes/course.routes.js'
 import StaffRouter from './routes/staff.routes.js'
@@ -31,6 +31,7 @@ app.use(limiter)
 // 3. Middlewares de Parseo y CORS
 app.use(cors())
 app.use(express.json())
+app.use(express.urlencoded({ extended: true }))
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -42,6 +43,7 @@ app.get('/health', (req, res) => {
 })
 
 // 4. Conexión de Rutas Principales
+app.use(authRouter)
 app.use(AtendanceRouter)
 app.use(CourseRouter)
 app.use(StaffRouter)

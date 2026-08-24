@@ -1,115 +1,170 @@
 import jwt from 'jsonwebtoken'
 
-const SECRET_KEY = process.env.SECRET_KEY
+/**
+ * Normaliza nombres de roles comunes y sinónimos
+ */
+const normalizeRole = (role) => {
+    if (!role) return ''
+    const r = role.toString().trim().toUpperCase()
+    if (r === 'ALUMNO' || r === 'STUDENT') return 'ESTUDIANTE'
+    if (r === 'PROFESOR' || r === 'TEACHER' || r === 'INSTRUCTOR') return 'DOCENTE'
+    if (r === 'ADMINISTRADOR') return 'ADMIN'
+    if (r === 'DIRECTOR' || r === 'SECRETARIA' || r === 'SECRETARÍA') return 'DIRECTIVO'
+    return r
+}
 
 /**
- * Middleware de autorización por roles para la infraestructura del servidor.
- * Revisa el rol del usuario (desde encabezados HTTP x-user-role, token o req.user)
- * y valida si se encuentra dentro de los roles autorizados para el endpoint.
+ * Middleware: Autentica el token JWT presente en la cabecera Authorization (Bearer <token>)
+ * Si el token es válido, inyecta req.user con la información decodificada.
+ */
+export const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'] || req.headers['x-access-token']
+    
+    if (!authHeader) {
+        return res.status(401).json({
+            error: 'Acceso no autorizado: Se requiere token de autenticación'
+        })
+    }
+
+    // Extrae el token si viene con prefijo 'Bearer '
+    const token = authHeader.startsWith('Bearer ')
+        ? authHeader.slice(7).trim()
+        : authHeader.trim()
+
+    if (!token) {
+        return res.status(401).json({
+            error: 'Acceso no autorizado: Formato de token inválido'
+        })
+    }
+
+    jwt.verify(token, process.env.SECRET_KEY, (err, decoded) => {
+        if (err) {
+            if (err.name === 'TokenExpiredError') {
+                return res.status(401).json({
+                    error: 'Sesión expirada: Por favor inicia sesión nuevamente'
+                })
+            }
+            return res.status(403).json({
+                error: 'Token inválido o corrupto'
+            })
+        }
+
+        // Inyecta el usuario decodificado en la petición
+        req.user = {
+            ...decoded,
+            role: normalizeRole(decoded.role)
+        }
+
+        next()
+    })
+}
+
+/**
+ * Middleware: Autenticación opcional.
+ * Si viene token lo valida y puebla req.user; si no viene, permite continuar con req.user = null.
+ */
+export const optionalAuth = (req, res, next) => {
+    const authHeader = req.headers['authorization'] || req.headers['x-access-token']
+    if (!authHeader) {
+        req.user = null
+        return next()
+    }
+
+    const token = authHeader.startsWith('Bearer ')
+        ? authHeader.slice(7).trim()
+        : authHeader.trim()
+
+    if (!token) {
+        req.user = null
+        return next()
+    }
+
+    jwt.verify(token, process.env.SECRET_KEY, (err, decoded) => {
+        if (!err && decoded) {
+            req.user = {
+                ...decoded,
+                role: normalizeRole(decoded.role)
+            }
+        } else {
+            req.user = null
+        }
+        next()
+    })
+}
+
+/**
+ * Middleware: Verifica que el usuario autenticado posea al menos uno de los roles permitidos.
+ * Soporta múltiples argumentos: authorizeRoles('ADMIN', 'DOCENTE') o arreglo: authorizeRoles(['ADMIN', 'DOCENTE'])
+ * Debe usarse DESPUÉS de authenticateToken.
+ *
+ * @param  {...(string|string[])} allowedRoles - Roles con permiso para acceder a la ruta
  */
 export const authorizeRoles = (...allowedRoles) => {
-  return (req, res, next) => {
-    // Extraer el rol del usuario desde el header x-user-role o payload de usuario
-    const userRole = (
-      req.headers['x-user-role'] || 
-      req.user?.rol || 
-      req.user?.role?.name || 
-      'director'
-    ).toString().toLowerCase()
+    // Aplana el arreglo por si se pasó un array como parámetro
+    const rolesList = allowedRoles
+        .flat()
+        .map(role => normalizeRole(role))
 
-    if (allowedRoles.length > 0) {
-      const normalizedAllowed = allowedRoles.map(r => String(r).toLowerCase())
-      // Si 'director', 'secretaria' o 'admin' está entre los permitidos
-      const isAllowed = normalizedAllowed.includes(userRole) || normalizedAllowed.includes('*')
-
-      if (!isAllowed) {
-        return res.status(403).json({
-          error: `Acceso restringido: El rol '${userRole}' no cuenta con permisos suficientes.`
-        })
-      }
-    }
-
-    next()
-  }
-}
-
-/**
- * ============================================================
- *  PLACEHOLDER — Auth Middlewares
- * ============================================================
- * 
- *  Estos middlewares NO están importados en ninguna ruta.
- *  Se activarán cuando se implemente el flujo de login/JWT.
- * 
- *  Para activar:
- *  1. Importar en las rutas:
- *     import { verifyToken, requireRole } from '../middlewares/auth.middlewares.js'
- * 
- *  2. Usar en las rutas:
- *     router.get('/', verifyToken, requireRole('director', 'instructor'), controller)
- * ============================================================
- */
-
-/**
- * Verifica que el request tenga un JWT válido en el header Authorization.
- * Si es válido, inyecta los datos del usuario en req.user.
- */
-export const verifyToken = (req, res, next) => {
-    const authHeader = req.headers.authorization
-
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({
-            success: false,
-            error: {
-                code: 'AUTH_REQUIRED',
-                details: [],
-            },
-            message: 'Token de autenticación requerido',
-        })
-    }
-
-    const token = authHeader.split(' ')[1]
-
-    try {
-        const decoded = jwt.verify(token, SECRET_KEY)
-        req.user = decoded
-        next()
-    } catch (error) {
-        const isExpired = error.name === 'TokenExpiredError'
-        return res.status(401).json({
-            success: false,
-            error: {
-                code: isExpired ? 'TOKEN_EXPIRED' : 'TOKEN_INVALID',
-                details: [],
-            },
-            message: isExpired
-                ? 'El token ha expirado, inicie sesión nuevamente'
-                : 'Token de autenticación inválido',
-        })
-    }
-}
-
-/**
- * Verifica que el usuario autenticado tenga uno de los roles permitidos.
- * Debe usarse DESPUÉS de verifyToken.
- * 
- * @param  {...string} allowedRoles - Roles permitidos (e.g. 'director', 'instructor')
- */
-export const requireRole = (...allowedRoles) => {
     return (req, res, next) => {
-        const userRole = req.user?.role
+        if (!req.user || !req.user.role) {
+            return res.status(401).json({
+                error: 'Acceso denegado: Usuario no autenticado o sin rol asignado'
+            })
+        }
 
-        if (!userRole || !allowedRoles.includes(userRole)) {
+        const userRole = normalizeRole(req.user.role)
+
+        if (!rolesList.includes(userRole)) {
             return res.status(403).json({
-                success: false,
-                error: {
-                    code: 'FORBIDDEN',
-                    details: [{
-                        required: allowedRoles,
-                        current: userRole || 'sin rol',
-                    }],
-                },
-                message: 'No tiene permisos para acceder a este recurso',
+                error: `Acceso denegado: Se requiere uno de los siguientes roles: [${rolesList.join(', ')}]`,
+                requiredRoles: rolesList,
+                userRole
+            })
+        }
+
+        next()
+    }
+}
+
+/**
+ * Middleware: Exclusivo para Administradores y Directivos
+ */
+export const requireAdmin = authorizeRoles('ADMIN', 'DIRECTIVO')
+
+/**
+ * Middleware: Exclusivo para Personal Educativo (Docentes, Directivos y Admins)
+ */
+export const requireStaff = authorizeRoles('DOCENTE', 'DIRECTIVO', 'ADMIN')
+
+/**
+ * Middleware: Exclusivo para Docentes (y administradores con permiso superior)
+ */
+export const requireDocente = authorizeRoles('DOCENTE', 'DIRECTIVO', 'ADMIN')
+
+/**
+ * Middleware: Exclusivo para Estudiantes (o Admins para gestión/supervisión)
+ */
+export const requireEstudiante = authorizeRoles('ESTUDIANTE', 'DIRECTIVO', 'ADMIN')
+
+/**
+ * Middleware: Permite el acceso únicamente si el recurso consultado pertenece al propio usuario
+ * (ej: /api/students/:id) o si el usuario que consulta tiene rol ADMIN / DIRECTIVO / DOCENTE.
+ *
+ * @param {string} paramKey - Nombre del parámetro en req.params (por defecto 'id' o 'studentId')
+ */
+export const requireSelfOrStaff = (paramKey = 'id') => {
+    return (req, res, next) => {
+        if (!req.user) {
+            return res.status(401).json({ error: 'Acceso no autorizado' })
+        }
+
+        const resourceId = req.params[paramKey]
+        const isSelf = req.user.id === resourceId
+        const isStaff = ['ADMIN', 'DIRECTIVO', 'DOCENTE'].includes(normalizeRole(req.user.role))
+
+        if (!isSelf && !isStaff) {
+            return res.status(403).json({
+                error: 'Acceso denegado: No tienes permiso para ver o modificar este recurso'
             })
         }
 

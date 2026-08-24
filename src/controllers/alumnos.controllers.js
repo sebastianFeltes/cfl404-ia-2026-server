@@ -1,5 +1,5 @@
 // Archivo: src/controllers/alumnos.controllers.js
-import prisma from '../db.js'
+import prisma from '../lib/prisma.js'
 
 const STATUS_MAP = {
   1: 'Activo',
