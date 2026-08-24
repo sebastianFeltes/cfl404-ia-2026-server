@@ -1,13 +1,7 @@
-import 'dotenv/config'
-import { PrismaClient } from '@prisma/client'
-import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
+// Archivo: src/seedData.js
+import prisma from './db.js'
 
-const adapter = new PrismaBetterSqlite3({
-  url: 'file:./cfl404.db'
-})
-const prisma = new PrismaClient({ adapter })
-
-const MOCK_STUDENTS_SEED = [
+export const MOCK_STUDENTS_SEED = [
   {
     first_name: 'Juan',
     last_name: 'Pérez',
@@ -130,125 +124,63 @@ const MOCK_STUDENTS_SEED = [
   }
 ]
 
-async function main() {
-  console.log('Poblando base de datos CFL 404...')
-
-  // 1. Roles
-  const roles = ['Director', 'Secretaría', 'Instructor', 'Alumno', 'Aspirante']
-  for (const roleName of roles) {
-    const exists = await prisma.role.findFirst({ where: { name: roleName } })
-    if (!exists) {
-      await prisma.role.create({ data: { name: roleName } })
-      console.log(`Rol creado: ${roleName}`)
-    }
-  }
-
-  const defaultRole = await prisma.role.findFirst({ where: { name: 'Alumno' } })
-  const aspiranteRole = await prisma.role.findFirst({ where: { name: 'Aspirante' } })
-  const instructorRole = await prisma.role.findFirst({ where: { name: 'Instructor' } })
-
-  // 2. Docente por defecto
-  let defaultStaff = await prisma.staff.findFirst()
-  if (!defaultStaff) {
-    defaultStaff = await prisma.staff.create({
-      data: {
-        firstName: 'Carlos',
-        lastName: 'Benítez',
-        email: 'c.benitez@cfl404.edu.ar',
-        dni: '20123456',
-        statusId: 1,
-        roleId: instructorRole.id,
+export async function autoSeedDatabase() {
+  try {
+    // 1. Asegurar roles
+    const roles = ['Director', 'Secretaría', 'Instructor', 'Alumno', 'Aspirante']
+    for (const name of roles) {
+      const exists = await prisma.role.findFirst({ where: { name } })
+      if (!exists) {
+        await prisma.role.create({ data: { name } }).catch(() => null)
       }
-    })
-  }
-
-  // 3. Cursos de la oferta formativa
-  const courseNames = [
-    'Operador de PC',
-    'Programador Web',
-    'Electricista Matriculado',
-    'Diseño Gráfico Digital',
-  ]
-
-  const courseMap = {}
-  for (const name of courseNames) {
-    let course = await prisma.course.findFirst({ where: { name } })
-    if (!course) {
-      course = await prisma.course.create({
-        data: {
-          name,
-          statusId: 1,
-          staffId: defaultStaff.id,
-          maxAbsences: 5,
-        }
-      })
-      console.log(`Curso creado: ${name}`)
-    }
-    courseMap[name] = course
-  }
-
-  // 4. Alumnos, detalles y asignación de curso
-  for (const s of MOCK_STUDENTS_SEED) {
-    let student = await prisma.student.findFirst({
-      where: { OR: [{ dni: s.dni }, { email: s.email }] }
-    })
-
-    const isAspirante = s.status_id === 3
-    const roleId = isAspirante ? aspiranteRole.id : defaultRole.id
-
-    if (!student) {
-      student = await prisma.student.create({
-        data: {
-          firstName: s.first_name,
-          lastName: s.last_name,
-          dni: s.dni,
-          email: s.email,
-          statusId: s.status_id,
-          roleId,
-          profilePhotoUrl: s.profile_photo_url,
-          studentDetail: {
-            create: {
-              phone: s.phone,
-              address: s.address,
-              academicLevel: s.academic_level,
-              gender: 'No especificado',
-              nacionality: 'Argentina',
-              dniCopy: 'true',
-              formCopy: 'true',
-              titleCopy: 'true',
-            }
-          }
-        }
-      })
-      console.log(`Alumno creado: ${s.first_name} ${s.last_name}`)
     }
 
-    // Vincular curso al alumno
-    const targetCourse = courseMap[s.course_name]
-    if (targetCourse) {
-      const alreadyEnrolled = await prisma.studentCourse.findFirst({
-        where: { studentId: student.id, courseId: targetCourse.id }
-      })
-      if (!alreadyEnrolled) {
-        await prisma.studentCourse.create({
-          data: {
-            studentId: student.id,
-            courseId: targetCourse.id,
-          }
+    const defaultRole = await prisma.role.findFirst({ where: { name: 'Alumno' } })
+    const aspiranteRole = await prisma.role.findFirst({ where: { name: 'Aspirante' } })
+
+    if (!defaultRole) return
+
+    // 2. Poblar estudiantes si hay menos de 5
+    const count = await prisma.student.count()
+    if (count < 5) {
+      console.log('Inicializando nómina inicial de alumnos en SQLite...')
+      for (const s of MOCK_STUDENTS_SEED) {
+        const exists = await prisma.student.findFirst({
+          where: { OR: [{ dni: s.dni }, { email: s.email }] }
         })
-        console.log(`Curso "${s.course_name}" asignado a ${s.first_name} ${s.last_name}`)
+
+        if (!exists) {
+          const isAspirante = s.status_id === 3
+          const roleId = isAspirante && aspiranteRole ? aspiranteRole.id : defaultRole.id
+
+          await prisma.student.create({
+            data: {
+              firstName: s.first_name,
+              lastName: s.last_name,
+              dni: s.dni,
+              email: s.email,
+              statusId: s.status_id,
+              roleId,
+              profilePhotoUrl: s.profile_photo_url,
+              studentDetail: {
+                create: {
+                  phone: s.phone,
+                  address: s.address,
+                  academicLevel: s.academic_level,
+                  gender: 'No especificado',
+                  nacionality: 'Argentina',
+                  dniCopy: 'true',
+                  formCopy: 'true',
+                  titleCopy: 'true',
+                }
+              }
+            }
+          }).catch((err) => console.log('Notice seed item:', err.message))
+        }
       }
+      console.log('Nómina inicial de alumnos sincronizada con éxito.')
     }
+  } catch (error) {
+    console.error('Error al inicializar datos:', error.message)
   }
-
-  console.log('Poblado completo exitosamente.')
 }
-
-main()
-  .catch((e) => {
-    console.error(e)
-    process.exit(1)
-  })
-  .finally(async () => {
-    await prisma.$disconnect()
-  })
