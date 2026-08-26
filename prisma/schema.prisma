@@ -9,7 +9,7 @@ datasource db {
   provider = "sqlite"
 }
 
-model Student {
+model User {
   id              String         @id @default(uuid())
   firstName       String         @map("first_name")
   lastName        String         @map("last_name")
@@ -27,16 +27,18 @@ model Student {
   createdAt       DateTime       @default(now()) @map("created_at")
   updatedAt       DateTime       @updatedAt @map("updated_at")
 
-  role            Role           @relation(fields: [roleId], references: [id])
-  studentDetail   StudentDetail?
-  studentCourses  StudentCourse[]
+  role              Role         @relation(fields: [roleId], references: [id])
+  status            Status       @relation(fields: [statusId], references: [id])
+  userDetail        UserDetail?
+  userCourses       UserCourse[]
+  instructedCourses Course[]     @relation("CourseInstructor")
 
-  @@map("student")
+  @@map("users")
 }
 
-model StudentDetail {
+model UserDetail {
   id            String    @id @default(uuid())
-  studentId     String    @unique @map("student_id")
+  userId        String    @unique @map("user_id")
   address       String?
   phone         String?
   dob           DateTime?
@@ -51,9 +53,9 @@ model StudentDetail {
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
 
-  student       Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@map("student_detail")
+  @@map("user_detail")
 }
 
 model Course {
@@ -64,14 +66,15 @@ model Course {
   startTime        String?           @map("start_time")
   endTime          String?           @map("end_time")
   statusId         Int               @map("status_id")
-  staffId          String            @map("staff_id")
+  instructorId     String            @map("instructor_id")
   maxAbsences      Int               @map("max_absences")
   createdAt        DateTime          @default(now()) @map("created_at")
   updatedAt        DateTime          @updatedAt @map("updated_at")
 
-  staff            Staff             @relation(fields: [staffId], references: [id])
+  status           Status            @relation(fields: [statusId], references: [id])
+  instructor       User              @relation("CourseInstructor", fields: [instructorId], references: [id])
   courseDetail     CourseDetail?
-  studentCourses   StudentCourse[]
+  userCourses      UserCourse[]
   classroomCourses ClassroomCourse[]
   courseDays       CourseDay[]
 
@@ -95,19 +98,19 @@ model CourseDetail {
   @@map("course_detail")
 }
 
-model StudentCourse {
+model UserCourse {
   id        String       @id @default(uuid())
-  studentId String       @map("student_id")
+  userId    String       @map("user_id")
   courseId  String       @map("course_id")
   createdAt DateTime     @default(now()) @map("created_at")
-  updatedAt DateTime     @updatedAt @map("update_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
 
-  student   Student      @relation(fields: [studentId], references: [id])
-  course    Course       @relation(fields: [courseId], references: [id])
+  user        User         @relation(fields: [userId], references: [id])
+  course      Course       @relation(fields: [courseId], references: [id])
   attendances Attendance[]
 
-  @@unique([studentId, courseId])
-  @@map("student_course")
+  @@unique([userId, courseId])
+  @@map("user_course")
 }
 
 model ClassroomCourse {
@@ -155,68 +158,35 @@ model Classroom {
   @@map("classroom")
 }
 
-model Staff {
-  id              String       @id @default(uuid())
-  firstName       String       @map("first_name")
-  lastName        String       @map("last_name")
-  email           String       @unique
-  // Google no provee DNI: queda nulo hasta que administración complete el legajo.
-  dni             String?      @unique
-  statusId        Int          @map("status_id")
-  roleId          Int          @map("role_id")
-  // Campos provenientes del ID token de Google (claims sub, email_verified, picture, locale)
-  googleId        String?      @unique @map("google_id")
-  emailVerified   Boolean      @default(false) @map("email_verified")
-  profilePhotoUrl String?      @map("profile_photo_url")
-  locale          String?
-  lastLoginAt     DateTime?    @map("last_login_at")
-  createdAt       DateTime     @default(now()) @map("created_at")
-  updatedAt       DateTime     @updatedAt @map("updated_at")
-
-  role            Role         @relation(fields: [roleId], references: [id])
-  staffDetail     StaffDetail?
-  courses         Course[]
-
-  @@map("staff")
-}
-
-model StaffDetail {
-  id          String    @id @default(uuid())
-  staffId     String    @unique @map("staff_id")
-  address     String?
-  phone       String?
-  dob         DateTime?
-  extraPhone  String?   @map("extra_phone")
-  extraEmail  String?   @map("extra_email")
-  gender      String?
-  nacionality String?
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
-
-  staff       Staff     @relation(fields: [staffId], references: [id], onDelete: Cascade)
-
-  @@map("staff_detail")
-}
-
 model Role {
-  id        Int       @id @default(autoincrement())
+  id        Int      @id @default(autoincrement())
   name      String
-  createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @updatedAt @map("updated_at")
-  students  Student[]
-  staffs    Staff[]
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  users     User[]
 
   @@map("role")
 }
 
+model Status {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  users     User[]
+  courses   Course[]
+
+  @@map("status")
+}
+
 model Attendance {
   id               String         @id @default(uuid())
-  idStudentCourse  String         @map("id_student_course")
+  userCourseId     String         @map("user_course_id")
   idCode           Int            @map("id_code")
   createdAt        DateTime       @default(now()) @map("created_at")
   updatedAt        DateTime       @updatedAt @map("updated_at")
 
-  studentCourse    StudentCourse  @relation(fields: [idStudentCourse], references: [id])
+  userCourse       UserCourse     @relation(fields: [userCourseId], references: [id])
   attendanceCode   AttendanceCode @relation(fields: [idCode], references: [id])
 
   @@map("attendance")

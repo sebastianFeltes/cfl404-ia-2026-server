@@ -121,39 +121,68 @@ const MOCK_STUDENTS_SEED = [
     academic_level: 'Secundario',
     course_name: 'Diseño Gráfico Digital',
     profile_photo_url: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=150&auto=format&fit=crop&q=80',
-  }
+  },
 ]
 
-// Convención unificada de roles para toda la plataforma (login, cursos, instructores y alumnos)
 const ROLES = {
-  ESTUDIANTE: 1,
-  DOCENTE: 2,
-  ADMIN: 3,
-  DIRECTIVO: 4,
+  GOD: 1,
+  ADMIN: 2,
+  DIRECTOR: 3,
+  REGENTE: 4,
+  SECRETARIA: 5,
+  PRECEPTORIA: 6,
+  INSTRUCTOR: 7,
+  ALUMNO: 8,
+  POSTULANTE: 9,
+}
+
+const STATUSES = {
+  ACTIVO: 1,
+  INACTIVO: 2,
+  PENDIENTE: 3,
+  EGRESADO: 4,
+}
+
+async function upsertCatalog(delegate, { id, name }, label) {
+  const exists = await delegate.findUnique({ where: { id } })
+  if (!exists) {
+    await delegate.create({ data: { id, name } })
+    console.log(`✅ ${label} creado: ${name}`)
+    return
+  }
+  console.log(`ℹ️ ${label} ya existe: ${name}`)
 }
 
 async function main() {
   console.log('🌱 Poblando base de datos CFL 404...')
 
-  // 1. Roles
   const rolesData = [
-    { id: ROLES.ESTUDIANTE, name: 'ESTUDIANTE' },
-    { id: ROLES.DOCENTE, name: 'DOCENTE' },
+    { id: ROLES.GOD, name: 'GOD' },
     { id: ROLES.ADMIN, name: 'ADMIN' },
-    { id: ROLES.DIRECTIVO, name: 'DIRECTIVO' },
+    { id: ROLES.DIRECTOR, name: 'DIRECTOR' },
+    { id: ROLES.REGENTE, name: 'REGENTE' },
+    { id: ROLES.SECRETARIA, name: 'SECRETARIA' },
+    { id: ROLES.PRECEPTORIA, name: 'PRECEPTORIA' },
+    { id: ROLES.INSTRUCTOR, name: 'INSTRUCTOR' },
+    { id: ROLES.ALUMNO, name: 'ALUMNO' },
+    { id: ROLES.POSTULANTE, name: 'POSTULANTE' },
   ]
 
   for (const role of rolesData) {
-    const exists = await prisma.role.findUnique({ where: { id: role.id } })
-    if (!exists) {
-      await prisma.role.create({ data: role })
-      console.log(`✅ Rol creado: ${role.name}`)
-    } else {
-      console.log(`ℹ️ Rol ya existe: ${role.name}`)
-    }
+    await upsertCatalog(prisma.role, role, 'Rol')
   }
 
-  // 2. Aulas
+  const statusesData = [
+    { id: STATUSES.ACTIVO, name: 'ACTIVO' },
+    { id: STATUSES.INACTIVO, name: 'INACTIVO' },
+    { id: STATUSES.PENDIENTE, name: 'PENDIENTE' },
+    { id: STATUSES.EGRESADO, name: 'EGRESADO' },
+  ]
+
+  for (const status of statusesData) {
+    await upsertCatalog(prisma.status, status, 'Status')
+  }
+
   const classroomsData = [
     { capacity: 45, name: 'aula 1' },
     { capacity: 20, name: 'aula digital' },
@@ -173,7 +202,6 @@ async function main() {
     }
   }
 
-  // 3. Códigos de asistencia
   const attendanceCodesData = ['presente', 'tarde', 'media falta', 'ausente', 'justificado', 'feriado']
 
   for (const name of attendanceCodesData) {
@@ -186,23 +214,21 @@ async function main() {
     }
   }
 
-  // 4. Docente por defecto (dictará los cursos de la oferta formativa)
-  let defaultStaff = await prisma.staff.findFirst({ where: { email: 'c.benitez@cfl404.edu.ar' } })
-  if (!defaultStaff) {
-    defaultStaff = await prisma.staff.create({
+  let defaultInstructor = await prisma.user.findFirst({ where: { email: 'c.benitez@cfl404.edu.ar' } })
+  if (!defaultInstructor) {
+    defaultInstructor = await prisma.user.create({
       data: {
         firstName: 'Carlos',
         lastName: 'Benítez',
         email: 'c.benitez@cfl404.edu.ar',
         dni: '20123456',
-        statusId: 1,
-        roleId: ROLES.DOCENTE,
+        statusId: STATUSES.ACTIVO,
+        roleId: ROLES.INSTRUCTOR,
       },
     })
-    console.log(`✅ Docente por defecto creado: ${defaultStaff.firstName} ${defaultStaff.lastName}`)
+    console.log(`✅ Instructor por defecto creado: ${defaultInstructor.firstName} ${defaultInstructor.lastName}`)
   }
 
-  // 5. Cursos de la oferta formativa
   const courseNames = ['Operador de PC', 'Programador Web', 'Electricista Matriculado', 'Diseño Gráfico Digital']
 
   const courseMap = {}
@@ -212,8 +238,8 @@ async function main() {
       course = await prisma.course.create({
         data: {
           name,
-          statusId: 1,
-          staffId: defaultStaff.id,
+          statusId: STATUSES.ACTIVO,
+          instructorId: defaultInstructor.id,
           maxAbsences: 5,
         },
       })
@@ -222,23 +248,25 @@ async function main() {
     courseMap[name] = course
   }
 
-  // 6. Alumnos, detalles y asignación de curso
   for (const s of MOCK_STUDENTS_SEED) {
-    let student = await prisma.student.findFirst({
+    const isPostulant = s.status_id === STATUSES.PENDIENTE
+    const roleId = isPostulant ? ROLES.POSTULANTE : ROLES.ALUMNO
+
+    let user = await prisma.user.findFirst({
       where: { OR: [{ dni: s.dni }, { email: s.email }] },
     })
 
-    if (!student) {
-      student = await prisma.student.create({
+    if (!user) {
+      user = await prisma.user.create({
         data: {
           firstName: s.first_name,
           lastName: s.last_name,
           dni: s.dni,
           email: s.email,
           statusId: s.status_id,
-          roleId: ROLES.ESTUDIANTE,
+          roleId,
           profilePhotoUrl: s.profile_photo_url,
-          studentDetail: {
+          userDetail: {
             create: {
               phone: s.phone,
               address: s.address,
@@ -252,39 +280,37 @@ async function main() {
           },
         },
       })
-      console.log(`✅ Alumno creado: ${s.first_name} ${s.last_name}`)
+      console.log(`✅ ${isPostulant ? 'Postulante' : 'Alumno'} creado: ${s.first_name} ${s.last_name}`)
     }
 
-    // Vincular curso al alumno
     const targetCourse = courseMap[s.course_name]
     if (targetCourse) {
-      const alreadyEnrolled = await prisma.studentCourse.findFirst({
-        where: { studentId: student.id, courseId: targetCourse.id },
+      const alreadyEnrolled = await prisma.userCourse.findFirst({
+        where: { userId: user.id, courseId: targetCourse.id },
       })
       if (!alreadyEnrolled) {
-        await prisma.studentCourse.create({
-          data: { studentId: student.id, courseId: targetCourse.id },
+        await prisma.userCourse.create({
+          data: { userId: user.id, courseId: targetCourse.id },
         })
         console.log(`✅ Curso "${s.course_name}" asignado a ${s.first_name} ${s.last_name}`)
       }
     }
   }
 
-  // 7. Usuario de prueba: Estudiante (login)
   const studentEmail = 'alumno.test@cfl404.edu.ar'
-  const studentExists = await prisma.student.findUnique({ where: { email: studentEmail } })
+  const studentExists = await prisma.user.findUnique({ where: { email: studentEmail } })
   if (!studentExists) {
-    const student = await prisma.student.create({
+    const student = await prisma.user.create({
       data: {
         firstName: 'Juan',
         lastName: 'Pérez',
         email: studentEmail,
         dni: '40123456',
-        statusId: 1,
-        roleId: ROLES.ESTUDIANTE,
+        statusId: STATUSES.ACTIVO,
+        roleId: ROLES.ALUMNO,
         googleId: 'google-student-fallback-id',
         profilePhotoUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
-        studentDetail: {
+        userDetail: {
           create: {
             address: 'Calle 123 N° 456, Berisso',
             phone: '221-555-0101',
@@ -295,26 +321,25 @@ async function main() {
         },
       },
     })
-    console.log(`✅ Estudiante de prueba creado: ${student.firstName} ${student.lastName} (${student.email})`)
+    console.log(`✅ Alumno de prueba creado: ${student.firstName} ${student.lastName} (${student.email})`)
   } else {
-    console.log(`ℹ️ Estudiante de prueba ya existe: ${studentEmail}`)
+    console.log(`ℹ️ Alumno de prueba ya existe: ${studentEmail}`)
   }
 
-  // 8. Usuario de prueba: Docente (login)
   const teacherEmail = 'docente.test@cfl404.edu.ar'
-  const teacherExists = await prisma.staff.findUnique({ where: { email: teacherEmail } })
+  const teacherExists = await prisma.user.findUnique({ where: { email: teacherEmail } })
   if (!teacherExists) {
-    const teacher = await prisma.staff.create({
+    const teacher = await prisma.user.create({
       data: {
         firstName: 'María',
         lastName: 'González',
         email: teacherEmail,
         dni: '30987654',
-        statusId: 1,
-        roleId: ROLES.DOCENTE,
+        statusId: STATUSES.ACTIVO,
+        roleId: ROLES.INSTRUCTOR,
         googleId: 'google-docente-fallback-id',
         profilePhotoUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150',
-        staffDetail: {
+        userDetail: {
           create: {
             address: 'Av. Montevideo 789, Berisso',
             phone: '221-555-0202',
@@ -324,26 +349,25 @@ async function main() {
         },
       },
     })
-    console.log(`✅ Docente de prueba creado: ${teacher.firstName} ${teacher.lastName} (${teacher.email})`)
+    console.log(`✅ Instructor de prueba creado: ${teacher.firstName} ${teacher.lastName} (${teacher.email})`)
   } else {
-    console.log(`ℹ️ Docente de prueba ya existe: ${teacherEmail}`)
+    console.log(`ℹ️ Instructor de prueba ya existe: ${teacherEmail}`)
   }
 
-  // 9. Usuario de prueba: Administrador (login)
   const adminEmail = 'admin.test@cfl404.edu.ar'
-  const adminExists = await prisma.staff.findUnique({ where: { email: adminEmail } })
+  const adminExists = await prisma.user.findUnique({ where: { email: adminEmail } })
   if (!adminExists) {
-    const admin = await prisma.staff.create({
+    const admin = await prisma.user.create({
       data: {
         firstName: 'Admin',
         lastName: 'CFL404',
         email: adminEmail,
         dni: '20111222',
-        statusId: 1,
+        statusId: STATUSES.ACTIVO,
         roleId: ROLES.ADMIN,
         googleId: 'google-admin-fallback-id',
         profilePhotoUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150',
-        staffDetail: {
+        userDetail: {
           create: {
             address: 'Sede Central CFL 404, Berisso',
             phone: '221-555-0303',
@@ -358,21 +382,20 @@ async function main() {
     console.log(`ℹ️ Administrador de prueba ya existe: ${adminEmail}`)
   }
 
-  // 10. Usuario de prueba: Directivo (login)
   const directorEmail = 'directivo.test@cfl404.edu.ar'
-  const directorExists = await prisma.staff.findUnique({ where: { email: directorEmail } })
+  const directorExists = await prisma.user.findUnique({ where: { email: directorEmail } })
   if (!directorExists) {
-    const director = await prisma.staff.create({
+    const director = await prisma.user.create({
       data: {
         firstName: 'Silvina',
         lastName: 'Ibáñez',
         email: directorEmail,
         dni: '25333444',
-        statusId: 1,
-        roleId: ROLES.DIRECTIVO,
+        statusId: STATUSES.ACTIVO,
+        roleId: ROLES.DIRECTOR,
         googleId: 'google-directivo-fallback-id',
         profilePhotoUrl: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=150',
-        staffDetail: {
+        userDetail: {
           create: {
             address: 'Sede Central CFL 404, Berisso',
             phone: '221-555-0404',
@@ -382,9 +405,9 @@ async function main() {
         },
       },
     })
-    console.log(`✅ Directivo de prueba creado: ${director.firstName} ${director.lastName} (${director.email})`)
+    console.log(`✅ Director de prueba creado: ${director.firstName} ${director.lastName} (${director.email})`)
   } else {
-    console.log(`ℹ️ Directivo de prueba ya existe: ${directorEmail}`)
+    console.log(`ℹ️ Director de prueba ya existe: ${directorEmail}`)
   }
 
   console.log('✨ Base de datos poblada exitosamente.')
