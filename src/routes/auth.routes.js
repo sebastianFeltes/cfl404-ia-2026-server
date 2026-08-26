@@ -2,7 +2,8 @@ import { Router } from 'express'
 import {
     loginWithGoogle,
     devLoginFallback,
-    getMyProfile
+    getMyProfile,
+    updateMyProfile,
 } from '../controllers/auth.controllers.js'
 import { authenticateToken } from '../middlewares/auth.middlewares.js'
 
@@ -14,5 +15,6 @@ authRouter.post('/api/auth/dev-login', devLoginFallback)
 
 // Rutas protegidas
 authRouter.get('/api/auth/me', authenticateToken, getMyProfile)
+authRouter.patch('/api/auth/me', authenticateToken, updateMyProfile)
 
 export default authRouter

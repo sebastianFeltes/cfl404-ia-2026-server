@@ -29,7 +29,24 @@ const limiter = rateLimit({
 app.use(limiter)
 
 // 3. Middlewares de Parseo y CORS
-app.use(cors())
+// Solo se aceptan los orígenes declarados en CLIENT_URL (lista separada por comas).
+// Las herramientas sin origen (curl, Postman, health checks) siguen permitidas.
+const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:5173')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean)
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) return callback(null, true)
+      const error = new Error(`Origen no permitido por CORS: ${origin}`)
+      error.statusCode = 403
+      callback(error)
+    },
+    credentials: true,
+  }),
+)
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 

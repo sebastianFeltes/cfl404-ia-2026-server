@@ -14,11 +14,16 @@ model Student {
   firstName       String         @map("first_name")
   lastName        String         @map("last_name")
   email           String         @unique
-  dni             String         @unique
+  // Google no provee DNI: queda nulo hasta que administración complete el legajo.
+  dni             String?        @unique
   statusId        Int            @map("status_id")
   roleId          Int            @map("role_id")
-  googleId        String?        @map("google_id")
+  // Campos provenientes del ID token de Google (claims sub, email_verified, picture, locale)
+  googleId        String?        @unique @map("google_id")
+  emailVerified   Boolean        @default(false) @map("email_verified")
   profilePhotoUrl String?        @map("profile_photo_url")
+  locale          String?
+  lastLoginAt     DateTime?      @map("last_login_at")
   createdAt       DateTime       @default(now()) @map("created_at")
   updatedAt       DateTime       @updatedAt @map("updated_at")
 
@@ -155,11 +160,16 @@ model Staff {
   firstName       String       @map("first_name")
   lastName        String       @map("last_name")
   email           String       @unique
-  dni             String       @unique
+  // Google no provee DNI: queda nulo hasta que administración complete el legajo.
+  dni             String?      @unique
   statusId        Int          @map("status_id")
   roleId          Int          @map("role_id")
-  googleId        String?      @map("google_id")
+  // Campos provenientes del ID token de Google (claims sub, email_verified, picture, locale)
+  googleId        String?      @unique @map("google_id")
+  emailVerified   Boolean      @default(false) @map("email_verified")
   profilePhotoUrl String?      @map("profile_photo_url")
+  locale          String?
+  lastLoginAt     DateTime?    @map("last_login_at")
   createdAt       DateTime     @default(now()) @map("created_at")
   updatedAt       DateTime     @updatedAt @map("updated_at")
 
