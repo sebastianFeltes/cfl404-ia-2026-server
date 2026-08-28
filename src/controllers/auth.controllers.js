@@ -10,17 +10,24 @@ const ALLOW_DEV_LOGIN = process.env.ALLOW_DEV_LOGIN === 'true' && !IS_PRODUCTION
 const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID)
 
 // Debe coincidir con los ids sembrados en prisma/seed.js
-const ROLES = { ESTUDIANTE: 1, DOCENTE: 2, ADMIN: 3, DIRECTIVO: 4 }
+const ROLES = {
+    GOD: 1,
+    ADMIN: 2,
+    DIRECTOR: 3,
+    REGENTE: 4,
+    SECRETARIA: 5,
+    PRECEPTORIA: 6,
+    INSTRUCTOR: 7,
+    ALUMNO: 8,
+    POSTULANTE: 9,
+}
 
-// Mismo mapa de estados que usa alumnos.controllers.js
 const STATUS_MAP = { 1: 'Activo', 2: 'Inactivo', 3: 'Pendiente', 4: 'Egresado' }
-
-// Estado asignado a una cuenta creada por Google que todavía no fue validada
-// por administración (no tiene DNI ni legajo cargado).
 const STATUS_PENDIENTE = 3
+const STUDENT_ROLES = new Set(['ALUMNO', 'POSTULANTE'])
+const userInclude = { role: true, status: true, userDetail: true }
 
-const studentInclude = { role: true, studentDetail: true }
-const staffInclude = { role: true, staffDetail: true }
+const typeFromRole = (roleName) => (STUDENT_ROLES.has(roleName) ? 'STUDENT' : 'STAFF')
 
 /**
  * Firma el JWT de sesión propio de la plataforma.
@@ -59,7 +66,7 @@ const serializeUser = (user, type) => ({
     locale: user.locale,
     lastLoginAt: user.lastLoginAt,
     type,
-    detail: type === 'STUDENT' ? user.studentDetail : user.staffDetail,
+    detail: user.userDetail,
 })
 
 /**
@@ -74,19 +81,13 @@ const findUserByEmailOrGoogleId = async (email, googleId) => {
     ]
     if (filters.length === 0) return null
 
-    const student = await prisma.student.findFirst({
+    const user = await prisma.user.findFirst({
         where: { OR: filters },
-        include: studentInclude,
+        include: userInclude,
     })
-    if (student) return { user: student, type: 'STUDENT' }
+    if (!user) return null
 
-    const staff = await prisma.staff.findFirst({
-        where: { OR: filters },
-        include: staffInclude,
-    })
-    if (staff) return { user: staff, type: 'STAFF' }
-
-    return null
+    return { user, type: typeFromRole(user.role.name) }
 }
 
 /**
@@ -145,10 +146,8 @@ const verifyGoogleCredential = async (credential) => {
  * Sincroniza en la base los datos que devuelve Google en cada inicio de sesión:
  * vincula el googleId la primera vez, refresca la foto/locale y sella el último acceso.
  */
-const syncGoogleProfile = async (user, type, profile) => {
-    const delegate = type === 'STUDENT' ? prisma.student : prisma.staff
-
-    return delegate.update({
+const syncGoogleProfile = async (user, profile) => {
+    return prisma.user.update({
         where: { id: user.id },
         data: {
             googleId: user.googleId || profile.googleId,
@@ -157,7 +156,7 @@ const syncGoogleProfile = async (user, type, profile) => {
             locale: profile.locale || user.locale,
             lastLoginAt: new Date(),
         },
-        include: type === 'STUDENT' ? studentInclude : staffInclude,
+        include: userInclude,
     })
 }
 
@@ -166,7 +165,7 @@ const syncGoogleProfile = async (user, type, profile) => {
  * Queda en estado pendiente y sin DNI: administración completa el legajo después.
  */
 const registerStudentFromGoogle = async (profile) => {
-    const student = await prisma.student.create({
+    const student = await prisma.user.create({
         data: {
             firstName: profile.firstName,
             lastName: profile.lastName,
@@ -177,10 +176,10 @@ const registerStudentFromGoogle = async (profile) => {
             locale: profile.locale,
             lastLoginAt: new Date(),
             statusId: STATUS_PENDIENTE,
-            roleId: ROLES.ESTUDIANTE,
-            studentDetail: { create: {} },
+            roleId: ROLES.POSTULANTE,
+            userDetail: { create: {} },
         },
-        include: studentInclude,
+        include: userInclude,
     })
 
     return { user: student, type: 'STUDENT' }
@@ -213,8 +212,8 @@ export const loginWithGoogle = async (req, res, next) => {
             record = await registerStudentFromGoogle(profile)
             isNewAccount = true
         } else {
-            const updated = await syncGoogleProfile(record.user, record.type, profile)
-            record = { user: updated, type: record.type }
+            const updated = await syncGoogleProfile(record.user, profile)
+            record = { user: updated, type: typeFromRole(updated.role.name) }
         }
 
         const { user, type } = record
@@ -280,30 +279,19 @@ export const devLoginFallback = async (req, res, next) => {
     }
 }
 
-const loadUserById = async (id, type) => {
-    if (type === 'STAFF') {
-        const user = await prisma.staff.findUnique({ where: { id }, include: staffInclude })
-        return user ? { user, type: 'STAFF' } : null
-    }
-
-    const user = await prisma.student.findUnique({ where: { id }, include: studentInclude })
-    return user ? { user, type: 'STUDENT' } : null
+const loadUserById = async (id) => {
+    const user = await prisma.user.findUnique({ where: { id }, include: userInclude })
+    return user ? { user, type: typeFromRole(user.role.name) } : null
 }
 
 const dniBelongsToSomeoneElse = async (dni, excludeId) => {
     if (!dni) return false
 
-    const student = await prisma.student.findFirst({
+    const other = await prisma.user.findFirst({
         where: { dni, NOT: { id: excludeId } },
         select: { id: true },
     })
-    if (student) return true
-
-    const staff = await prisma.staff.findFirst({
-        where: { dni, NOT: { id: excludeId } },
-        select: { id: true },
-    })
-    return Boolean(staff)
+    return Boolean(other)
 }
 
 /**
@@ -315,7 +303,7 @@ export const getMyProfile = async (req, res, next) => {
     try {
         const { id, type, email } = req.user
 
-        const record = (await loadUserById(id, type)) || (await findUserByEmailOrGoogleId(email))
+        const record = (await loadUserById(id)) || (await findUserByEmailOrGoogleId(email))
         if (!record || record.user.id !== id) {
             return res.status(404).json({ error: 'Usuario no encontrado' })
         }
@@ -334,7 +322,7 @@ export const getMyProfile = async (req, res, next) => {
 export const updateMyProfile = async (req, res, next) => {
     try {
         const { id, type, email } = req.user
-        const record = (await loadUserById(id, type)) || (await findUserByEmailOrGoogleId(email))
+        const record = (await loadUserById(id)) || (await findUserByEmailOrGoogleId(email))
 
         if (!record || record.user.id !== id) {
             return res.status(404).json({ error: 'Usuario no encontrado' })
@@ -385,11 +373,10 @@ export const updateMyProfile = async (req, res, next) => {
             return res.status(400).json({ error: 'No hay campos para actualizar' })
         }
 
-        const delegate = record.type === 'STAFF' ? prisma.staff : prisma.student
-        const updated = await delegate.update({
+        const updated = await prisma.user.update({
             where: { id },
             data,
-            include: record.type === 'STAFF' ? staffInclude : studentInclude,
+            include: userInclude,
         })
 
         return res.json({

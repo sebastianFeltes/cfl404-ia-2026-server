@@ -15,6 +15,8 @@ const STATUS_TO_ID = {
   Egresado: 4,
 }
 
+const STUDENT_ROLE_NAMES = ['ALUMNO', 'POSTULANTE']
+
 /**
  * Helper para obtener o crear un curso por nombre
  */
@@ -26,13 +28,15 @@ async function getOrCreateCourse(courseName) {
   })
 
   if (!course) {
-    let defaultStaff = await prisma.staff.findFirst()
-    if (!defaultStaff) {
-      let instructorRole = await prisma.role.findFirst({ where: { name: 'Instructor' } })
+    let defaultInstructor = await prisma.user.findFirst({
+      where: { role: { name: 'INSTRUCTOR' } },
+    })
+    if (!defaultInstructor) {
+      let instructorRole = await prisma.role.findFirst({ where: { name: 'INSTRUCTOR' } })
       if (!instructorRole) {
-        instructorRole = await prisma.role.create({ data: { name: 'Instructor' } })
+        instructorRole = await prisma.role.create({ data: { name: 'INSTRUCTOR' } })
       }
-      defaultStaff = await prisma.staff.create({
+      defaultInstructor = await prisma.user.create({
         data: {
           firstName: 'Docente',
           lastName: 'CFL 404',
@@ -48,7 +52,7 @@ async function getOrCreateCourse(courseName) {
       data: {
         name: courseName,
         statusId: 1,
-        staffId: defaultStaff.id,
+        instructorId: defaultInstructor.id,
         maxAbsences: 5,
       },
     })
@@ -57,30 +61,34 @@ async function getOrCreateCourse(courseName) {
   return course
 }
 
+const studentInclude = {
+  userDetail: true,
+  userCourses: {
+    include: {
+      course: true,
+    },
+  },
+  role: true,
+  status: true,
+}
+
 /**
  * Obtener listado completo de alumnos con sus cursos y detalles
  */
 export const getAlumnos = async (req, res, next) => {
   try {
-    const students = await prisma.student.findMany({
-      include: {
-        studentDetail: true,
-        studentCourses: {
-          include: {
-            course: true,
-          },
-        },
-        role: true,
-      },
+    const students = await prisma.user.findMany({
+      where: { role: { name: { in: STUDENT_ROLE_NAMES } } },
+      include: studentInclude,
       orderBy: {
         createdAt: 'desc',
       },
     })
 
     const formattedStudents = students.map((s) => {
-      const activeCourse = s.studentCourses?.[0]?.course?.name || 'Sin curso asignado'
-      const statusText = STATUS_MAP[s.statusId] || 'Activo'
-      const isAspirante = s.statusId === 3 || s.role?.name === 'Aspirante'
+      const activeCourse = s.userCourses?.[0]?.course?.name || 'Sin curso asignado'
+      const statusText = STATUS_MAP[s.statusId] || s.status?.name || 'Activo'
+      const isAspirante = s.statusId === 3 || s.role?.name === 'POSTULANTE'
 
       return {
         id: s.id,
@@ -88,14 +96,14 @@ export const getAlumnos = async (req, res, next) => {
         last_name: s.lastName,
         dni: s.dni,
         email: s.email,
-        phone: s.studentDetail?.phone || '',
-        extra_phone: s.studentDetail?.extraPhone || '',
-        extra_email: s.studentDetail?.extraEmail || '',
-        address: s.studentDetail?.address || '',
-        dob: s.studentDetail?.dob ? new Date(s.studentDetail.dob).toLocaleDateString('es-AR') : '',
-        gender: s.studentDetail?.gender || '',
-        nacionality: s.studentDetail?.nacionality || 'Argentina',
-        academic_level: s.studentDetail?.academicLevel || 'Secundario',
+        phone: s.userDetail?.phone || '',
+        extra_phone: s.userDetail?.extraPhone || '',
+        extra_email: s.userDetail?.extraEmail || '',
+        address: s.userDetail?.address || '',
+        dob: s.userDetail?.dob ? new Date(s.userDetail.dob).toLocaleDateString('es-AR') : '',
+        gender: s.userDetail?.gender || '',
+        nacionality: s.userDetail?.nacionality || 'Argentina',
+        academic_level: s.userDetail?.academicLevel || 'Secundario',
         course_name: activeCourse,
         course: activeCourse,
         enrollment_date: new Date(s.createdAt).toLocaleDateString('es-AR'),
@@ -103,13 +111,13 @@ export const getAlumnos = async (req, res, next) => {
         status: statusText,
         is_present: s.statusId === 1,
         is_aspirante: isAspirante,
-        role_name: s.role?.name || (isAspirante ? 'Aspirante' : 'Alumno'),
+        role_name: s.role?.name || (isAspirante ? 'POSTULANTE' : 'ALUMNO'),
         profile_photo_url: s.profilePhotoUrl,
         dni_copy: true,
         form_copy: true,
         title_copy: true,
-        studentDetail: s.studentDetail,
-        studentCourses: s.studentCourses,
+        studentDetail: s.userDetail,
+        studentCourses: s.userCourses,
         createdAt: s.createdAt,
       }
     })
@@ -131,17 +139,9 @@ export const getAlumnoById = async (req, res, next) => {
   try {
     const { id } = req.params
 
-    const student = await prisma.student.findUnique({
+    const student = await prisma.user.findUnique({
       where: { id },
-      include: {
-        studentDetail: true,
-        studentCourses: {
-          include: {
-            course: true,
-          },
-        },
-        role: true,
-      },
+      include: studentInclude,
     })
 
     if (!student) {
@@ -150,9 +150,9 @@ export const getAlumnoById = async (req, res, next) => {
       })
     }
 
-    const activeCourse = student.studentCourses?.[0]?.course?.name || 'Sin curso asignado'
-    const statusText = STATUS_MAP[student.statusId] || 'Activo'
-    const isAspirante = student.statusId === 3 || student.role?.name === 'Aspirante'
+    const activeCourse = student.userCourses?.[0]?.course?.name || 'Sin curso asignado'
+    const statusText = STATUS_MAP[student.statusId] || student.status?.name || 'Activo'
+    const isAspirante = student.statusId === 3 || student.role?.name === 'POSTULANTE'
 
     const formattedStudent = {
       id: student.id,
@@ -160,14 +160,14 @@ export const getAlumnoById = async (req, res, next) => {
       last_name: student.lastName,
       dni: student.dni,
       email: student.email,
-      phone: student.studentDetail?.phone || '',
-      extra_phone: student.studentDetail?.extraPhone || '',
-      extra_email: student.studentDetail?.extraEmail || '',
-      address: student.studentDetail?.address || '',
-      dob: student.studentDetail?.dob ? new Date(student.studentDetail.dob).toLocaleDateString('es-AR') : '',
-      gender: student.studentDetail?.gender || '',
-      nacionality: student.studentDetail?.nacionality || 'Argentina',
-      academic_level: student.studentDetail?.academicLevel || 'Secundario',
+      phone: student.userDetail?.phone || '',
+      extra_phone: student.userDetail?.extraPhone || '',
+      extra_email: student.userDetail?.extraEmail || '',
+      address: student.userDetail?.address || '',
+      dob: student.userDetail?.dob ? new Date(student.userDetail.dob).toLocaleDateString('es-AR') : '',
+      gender: student.userDetail?.gender || '',
+      nacionality: student.userDetail?.nacionality || 'Argentina',
+      academic_level: student.userDetail?.academicLevel || 'Secundario',
       course_name: activeCourse,
       course: activeCourse,
       enrollment_date: new Date(student.createdAt).toLocaleDateString('es-AR'),
@@ -175,13 +175,13 @@ export const getAlumnoById = async (req, res, next) => {
       status: statusText,
       is_present: student.statusId === 1,
       is_aspirante: isAspirante,
-      role_name: student.role?.name || 'Alumno',
+      role_name: student.role?.name || 'ALUMNO',
       profile_photo_url: student.profilePhotoUrl,
       dni_copy: true,
       form_copy: true,
       title_copy: true,
-      studentDetail: student.studentDetail,
-      studentCourses: student.studentCourses,
+      studentDetail: student.userDetail,
+      studentCourses: student.userCourses,
       createdAt: student.createdAt,
     }
 
@@ -216,7 +216,7 @@ export const createAlumno = async (req, res, next) => {
     } = req.body
 
     // 1. Verificar unicidad de DNI y Email
-    const existingStudent = await prisma.student.findFirst({
+    const existingStudent = await prisma.user.findFirst({
       where: {
         OR: [{ dni }, { email }],
       },
@@ -230,7 +230,8 @@ export const createAlumno = async (req, res, next) => {
     }
 
     // 2. Obtener o crear rol
-    const targetRoleName = role_name === 'Aspirante' ? 'Aspirante' : 'Alumno'
+    const isPostulant = role_name === 'Aspirante' || role_name === 'POSTULANTE'
+    const targetRoleName = isPostulant ? 'POSTULANTE' : 'ALUMNO'
     let alumnoRole = await prisma.role.findFirst({
       where: { name: targetRoleName },
     })
@@ -246,12 +247,12 @@ export const createAlumno = async (req, res, next) => {
       finalStatusId = status_id
     } else if (status) {
       finalStatusId = STATUS_TO_ID[status] || 1
-    } else if (role_name === 'Aspirante') {
+    } else if (role_name === 'Aspirante' || role_name === 'POSTULANTE') {
       finalStatusId = 3
     }
 
     // 3. Crear estudiante y su detalle
-    const newStudent = await prisma.student.create({
+    const newStudent = await prisma.user.create({
       data: {
         firstName: first_name,
         lastName: last_name,
@@ -260,7 +261,7 @@ export const createAlumno = async (req, res, next) => {
         statusId: finalStatusId,
         roleId: alumnoRole.id,
         profilePhotoUrl: profile_photo_url || null,
-        studentDetail: {
+        userDetail: {
           create: {
             phone: phone || null,
             address: address || null,
@@ -272,7 +273,7 @@ export const createAlumno = async (req, res, next) => {
         },
       },
       include: {
-        studentDetail: true,
+        userDetail: true,
         role: true,
       },
     })
@@ -282,16 +283,16 @@ export const createAlumno = async (req, res, next) => {
     if (selectedCourseName) {
       const targetCourse = await getOrCreateCourse(selectedCourseName)
       if (targetCourse) {
-        await prisma.studentCourse.create({
+        await prisma.userCourse.create({
           data: {
-            studentId: newStudent.id,
+            userId: newStudent.id,
             courseId: targetCourse.id,
           },
         })
       }
     }
 
-    const isAspirante = newStudent.statusId === 3 || targetRoleName === 'Aspirante'
+    const isAspirante = newStudent.statusId === 3 || targetRoleName === 'POSTULANTE'
 
     return res.status(201).json({
       status: 'success',
@@ -302,9 +303,9 @@ export const createAlumno = async (req, res, next) => {
         last_name: newStudent.lastName,
         dni: newStudent.dni,
         email: newStudent.email,
-        phone: newStudent.studentDetail?.phone || '',
-        address: newStudent.studentDetail?.address || '',
-        academic_level: newStudent.studentDetail?.academicLevel || 'Secundario',
+        phone: newStudent.userDetail?.phone || '',
+        address: newStudent.userDetail?.address || '',
+        academic_level: newStudent.userDetail?.academicLevel || 'Secundario',
         course_name: selectedCourseName || 'Sin curso asignado',
         course: selectedCourseName || 'Sin curso asignado',
         enrollment_date: new Date(newStudent.createdAt).toLocaleDateString('es-AR'),
@@ -347,7 +348,7 @@ export const updateAlumno = async (req, res, next) => {
       profile_photo_url,
     } = req.body
 
-    const studentExists = await prisma.student.findUnique({
+    const studentExists = await prisma.user.findUnique({
       where: { id },
     })
 
@@ -365,7 +366,7 @@ export const updateAlumno = async (req, res, next) => {
     }
 
     // 1. Actualizar datos base del alumno
-    const updatedStudent = await prisma.student.update({
+    const updatedStudent = await prisma.user.update({
       where: { id },
       data: {
         ...(first_name && { firstName: first_name }),
@@ -374,7 +375,7 @@ export const updateAlumno = async (req, res, next) => {
         ...(email && { email }),
         ...(finalStatusId !== undefined && { statusId: finalStatusId }),
         ...(profile_photo_url !== undefined && { profilePhotoUrl: profile_photo_url }),
-        studentDetail: {
+        userDetail: {
           upsert: {
             create: {
               phone: phone || null,
@@ -390,8 +391,8 @@ export const updateAlumno = async (req, res, next) => {
         },
       },
       include: {
-        studentDetail: true,
-        studentCourses: { include: { course: true } },
+        userDetail: true,
+        userCourses: { include: { course: true } },
       },
     })
 
@@ -400,19 +401,19 @@ export const updateAlumno = async (req, res, next) => {
     if (selectedCourseName !== undefined) {
       const targetCourse = await getOrCreateCourse(selectedCourseName)
       if (targetCourse) {
-        await prisma.studentCourse.deleteMany({
-          where: { studentId: id },
+        await prisma.userCourse.deleteMany({
+          where: { userId: id },
         })
-        await prisma.studentCourse.create({
+        await prisma.userCourse.create({
           data: {
-            studentId: id,
+            userId: id,
             courseId: targetCourse.id,
           },
         })
       }
     }
 
-    const currentCourseName = selectedCourseName || updatedStudent.studentCourses?.[0]?.course?.name || 'Sin curso asignado'
+    const currentCourseName = selectedCourseName || updatedStudent.userCourses?.[0]?.course?.name || 'Sin curso asignado'
 
     return res.status(200).json({
       status: 'success',
@@ -423,7 +424,7 @@ export const updateAlumno = async (req, res, next) => {
         last_name: updatedStudent.lastName,
         dni: updatedStudent.dni,
         email: updatedStudent.email,
-        phone: updatedStudent.studentDetail?.phone,
+        phone: updatedStudent.userDetail?.phone,
         course_name: currentCourseName,
         course: currentCourseName,
         status_id: updatedStudent.statusId,
@@ -443,7 +444,7 @@ export const deleteAlumno = async (req, res, next) => {
   try {
     const { id } = req.params
 
-    const studentExists = await prisma.student.findUnique({
+    const studentExists = await prisma.user.findUnique({
       where: { id },
     })
 
@@ -453,15 +454,15 @@ export const deleteAlumno = async (req, res, next) => {
       })
     }
 
-    await prisma.studentCourse.deleteMany({
-      where: { studentId: id },
+    await prisma.userCourse.deleteMany({
+      where: { userId: id },
     })
 
-    await prisma.studentDetail.deleteMany({
-      where: { studentId: id },
+    await prisma.userDetail.deleteMany({
+      where: { userId: id },
     })
 
-    await prisma.student.delete({
+    await prisma.user.delete({
       where: { id },
     })
 

@@ -1,50 +1,50 @@
-import { PrismaClient } from '@prisma/client'
-import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
+import prisma from '../lib/prisma.js'
 
-const adapter = new PrismaBetterSqlite3({
-  url: 'file:./database.db'
-})
-const prisma = new PrismaClient({ adapter })
+const COURSE_INCLUDE = {
+  courseDetail: true,
+  instructor: true,
+  status: true,
+}
 
-// GET /courses - Obtener lista de cursos con detalles
+function toClientCourse(course) {
+  if (!course) return course
+  return {
+    ...course,
+    staff: course.instructor,
+    staffId: course.instructorId,
+  }
+}
+
 export const getCourses = async (req, res, next) => {
   try {
     const courses = await prisma.course.findMany({
-      include: {
-        courseDetail: true,
-        staff: true
-      },
+      include: COURSE_INCLUDE,
       orderBy: {
-        createdAt: 'desc'
-      }
+        createdAt: 'desc',
+      },
     })
-    res.json(courses)
+    res.json(courses.map(toClientCourse))
   } catch (error) {
     next(error)
   }
 }
 
-// GET /courses/:id - Obtener curso por ID
 export const getCourseById = async (req, res, next) => {
   try {
     const { id } = req.params
     const course = await prisma.course.findUnique({
       where: { id },
-      include: {
-        courseDetail: true,
-        staff: true
-      }
+      include: COURSE_INCLUDE,
     })
     if (!course) {
       return res.status(404).json({ message: 'Curso no encontrado' })
     }
-    res.json(course)
+    res.json(toClientCourse(course))
   } catch (error) {
     next(error)
   }
 }
 
-// POST /courses - Crear nuevo curso
 export const createCourse = async (req, res, next) => {
   try {
     const {
@@ -55,21 +55,23 @@ export const createCourse = async (req, res, next) => {
       endTime,
       statusId = 1,
       staffId,
+      instructorId,
       maxAbsences = 4,
       description,
       quota = 25,
       hourQuantity = 120,
       classesQuantity = 32,
       titleRequired = false,
-      endorsementBy = 'CFP N°404 Berisso'
+      endorsementBy = 'CFP N°404 Berisso',
     } = req.body
 
-    // Buscar o usar staff id default si no viene especificado
-    let targetStaffId = staffId
-    if (!targetStaffId) {
-      const firstStaff = await prisma.staff.findFirst()
-      if (firstStaff) {
-        targetStaffId = firstStaff.id
+    let targetInstructorId = instructorId || staffId
+    if (!targetInstructorId) {
+      const firstInstructor = await prisma.user.findFirst({
+        where: { role: { name: 'INSTRUCTOR' } },
+      })
+      if (firstInstructor) {
+        targetInstructorId = firstInstructor.id
       }
     }
 
@@ -81,7 +83,7 @@ export const createCourse = async (req, res, next) => {
       endTime,
       ...(startDate && { startDate: new Date(startDate) }),
       ...(endDate && { endDate: new Date(endDate) }),
-      ...(targetStaffId && { staffId: targetStaffId }),
+      ...(targetInstructorId && { instructorId: targetInstructorId }),
       courseDetail: {
         create: {
           description,
@@ -89,26 +91,22 @@ export const createCourse = async (req, res, next) => {
           hourQuantity: Number(hourQuantity),
           classesQuantity: Number(classesQuantity),
           titleRequired: Boolean(titleRequired),
-          endorsementBy
-        }
-      }
+          endorsementBy,
+        },
+      },
     }
 
     const newCourse = await prisma.course.create({
       data: courseData,
-      include: {
-        courseDetail: true,
-        staff: true
-      }
+      include: COURSE_INCLUDE,
     })
 
-    res.status(201).json(newCourse)
+    res.status(201).json(toClientCourse(newCourse))
   } catch (error) {
     next(error)
   }
 }
 
-// PUT /courses/:id - Actualizar curso existente
 export const updateCourse = async (req, res, next) => {
   try {
     const { id } = req.params
@@ -119,7 +117,9 @@ export const updateCourse = async (req, res, next) => {
       description,
       quota,
       hourQuantity,
-      classesQuantity
+      classesQuantity,
+      staffId,
+      instructorId,
     } = req.body
 
     const updatedCourse = await prisma.course.update({
@@ -128,39 +128,35 @@ export const updateCourse = async (req, res, next) => {
         ...(name && { name }),
         ...(statusId !== undefined && { statusId: Number(statusId) }),
         ...(maxAbsences !== undefined && { maxAbsences: Number(maxAbsences) }),
+        ...((instructorId || staffId) && { instructorId: instructorId || staffId }),
         courseDetail: {
           update: {
             ...(description !== undefined && { description }),
             ...(quota !== undefined && { quota: Number(quota) }),
             ...(hourQuantity !== undefined && { hourQuantity: Number(hourQuantity) }),
-            ...(classesQuantity !== undefined && { classesQuantity: Number(classesQuantity) })
-          }
-        }
+            ...(classesQuantity !== undefined && { classesQuantity: Number(classesQuantity) }),
+          },
+        },
       },
-      include: {
-        courseDetail: true,
-        staff: true
-      }
+      include: COURSE_INCLUDE,
     })
 
-    res.json(updatedCourse)
+    res.json(toClientCourse(updatedCourse))
   } catch (error) {
     next(error)
   }
 }
 
-// DELETE /courses/:id - Eliminar un curso
 export const deleteCourse = async (req, res, next) => {
   try {
     const { id } = req.params
 
-    // Eliminar courseDetail si existe y luego el course
     await prisma.courseDetail.deleteMany({
-      where: { courseId: id }
+      where: { courseId: id },
     })
 
     await prisma.course.delete({
-      where: { id }
+      where: { id },
     })
 
     res.json({ message: 'Curso eliminado correctamente', id })

@@ -14,20 +14,23 @@ function toClientShape(staff) {
         status_id: staff.statusId,
         role_id: staff.roleId,
         role_name: staff.role?.name ?? null,
-        phone: staff.staffDetail?.phone ?? null,
-        address: staff.staffDetail?.address ?? null,
+        phone: staff.userDetail?.phone ?? null,
+        address: staff.userDetail?.address ?? null,
         profile_photo_url: staff.profilePhotoUrl,
-        course_name: staff.courses?.[0]?.name ?? null,
-        assigned_courses: staff.courses?.map(c => c.name) ?? [],
+        course_name: staff.instructedCourses?.[0]?.name ?? null,
+        assigned_courses: staff.instructedCourses?.map(c => c.name) ?? [],
         created_at: staff.createdAt,
     }
 }
 
-/** Incluir relaciones necesarias en cada query de Staff */
+const STAFF_ROLE_NAMES = ['GOD', 'ADMIN', 'DIRECTOR', 'REGENTE', 'SECRETARIA', 'PRECEPTORIA', 'INSTRUCTOR']
+
+/** Incluir relaciones necesarias en cada query de personal */
 const STAFF_INCLUDE = {
     role: true,
-    staffDetail: true,
-    courses: {
+    status: true,
+    userDetail: true,
+    instructedCourses: {
         select: { id: true, name: true },
     },
 }
@@ -38,7 +41,8 @@ const STAFF_INCLUDE = {
  */
 export const getAllStaff = async (req, res, next) => {
     try {
-        const staffList = await prisma.staff.findMany({
+        const staffList = await prisma.user.findMany({
+            where: { role: { name: { in: STAFF_ROLE_NAMES } } },
             include: STAFF_INCLUDE,
             orderBy: { lastName: 'asc' },
         })
@@ -61,7 +65,7 @@ export const getStaffById = async (req, res, next) => {
     try {
         const { id } = req.params
 
-        const staff = await prisma.staff.findUnique({
+        const staff = await prisma.user.findUnique({
             where: { id },
             include: STAFF_INCLUDE,
         })
@@ -108,8 +112,7 @@ export const createStaff = async (req, res, next) => {
         } = req.body
 
         const newStaff = await prisma.$transaction(async (tx) => {
-            // Crear el Staff
-            const staff = await tx.staff.create({
+            const staff = await tx.user.create({
                 data: {
                     firstName: first_name,
                     lastName: last_name,
@@ -118,20 +121,16 @@ export const createStaff = async (req, res, next) => {
                     statusId: status_id,
                     roleId: role_id,
                     profilePhotoUrl: profile_photo_url || null,
+                    userDetail: {
+                        create: {
+                            phone: phone || null,
+                            address: address || null,
+                        },
+                    },
                 },
             })
 
-            // Crear el StaffDetail asociado (con phone y address si llegan)
-            await tx.staffDetail.create({
-                data: {
-                    staffId: staff.id,
-                    phone: phone || null,
-                    address: address || null,
-                },
-            })
-
-            // Retornar el staff con relaciones incluidas
-            return tx.staff.findUnique({
+            return tx.user.findUnique({
                 where: { id: staff.id },
                 include: STAFF_INCLUDE,
             })
@@ -169,7 +168,7 @@ export const updateStaff = async (req, res, next) => {
 
         const updatedStaff = await prisma.$transaction(async (tx) => {
             // Verificar que el instructor existe
-            const existing = await tx.staff.findUnique({ where: { id } })
+            const existing = await tx.user.findUnique({ where: { id } })
             if (!existing) {
                 const err = new Error('Instructor no encontrado')
                 err.statusCode = 404
@@ -188,7 +187,7 @@ export const updateStaff = async (req, res, next) => {
 
             // Actualizar Staff si hay campos
             if (Object.keys(staffData).length > 0) {
-                await tx.staff.update({
+                await tx.user.update({
                     where: { id },
                     data: staffData,
                 })
@@ -201,18 +200,18 @@ export const updateStaff = async (req, res, next) => {
 
             // Actualizar o crear StaffDetail si hay campos
             if (Object.keys(detailData).length > 0) {
-                await tx.staffDetail.upsert({
-                    where: { staffId: id },
+                await tx.userDetail.upsert({
+                    where: { userId: id },
                     update: detailData,
                     create: {
-                        staffId: id,
+                        userId: id,
                         ...detailData,
                     },
                 })
             }
 
             // Retornar el staff actualizado con relaciones
-            return tx.staff.findUnique({
+            return tx.user.findUnique({
                 where: { id },
                 include: STAFF_INCLUDE,
             })
