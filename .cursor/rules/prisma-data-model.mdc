@@ -1,0 +1,42 @@
+---
+description: Guía del modelo Prisma unificado (User, UserDetail, UserCourse, Status, Role)
+alwaysApply: true
+---
+
+# Modelo de datos CFL 404
+
+Fuente de verdad: `server/prisma/schema.prisma`. Personas viven en **una sola tabla**.
+
+## Personas
+
+- Usar `User` + `UserDetail`. No existen `Student` ni `Staff`.
+- Tipo de persona = `roleId` / `role.name`, no una tabla aparte.
+- Estado = `statusId` / `status.name`. Incluir `status`; no mapear ids a mano.
+
+Roles (id fijo): `GOD` 1, `ADMIN` 2, `DIRECTOR` 3, `REGENTE` 4, `SECRETARIA` 5, `PRECEPTORIA` 6, `INSTRUCTOR` 7, `ALUMNO` 8, `POSTULANTE` 9.
+
+Statuses (id fijo): `ACTIVO` 1, `INACTIVO` 2, `PENDIENTE` 3, `EGRESADO` 4.
+
+## Cursos e inscripciones
+
+- Docente del curso: `Course.instructorId` → `User` (relación `instructor` / `instructedCourses`).
+- Inscripción de `ALUMNO` o `POSTULANTE`: `UserCourse` (`userId` + `courseId`).
+- Asistencia: `Attendance.userCourseId` → `UserCourse`.
+
+```js
+// ❌ BAD
+prisma.student.findMany()
+prisma.staff.findFirst()
+course.staffId
+prisma.studentCourse.create({ data: { studentId } })
+
+// ✅ GOOD
+prisma.user.findMany({
+  where: { role: { name: 'ALUMNO' } },
+  include: { role: true, status: true, userDetail: true, userCourses: true },
+})
+prisma.course.findMany({ include: { instructor: true, status: true } })
+prisma.userCourse.create({ data: { userId, courseId } })
+```
+
+Prohibido reintroducir `Student`/`Staff` o FKs `staffId`/`studentId`. No usar `statusId` sin relación a `Status`.

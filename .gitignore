@@ -2,4 +2,7 @@ node_modules
 # Keep environment variables out of version control
 .env
 
+# Credenciales OAuth descargadas de Google Cloud Console
+client_secret*.json
+
 /generated/prisma
