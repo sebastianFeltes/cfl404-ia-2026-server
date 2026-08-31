@@ -1,15 +1,22 @@
 import jwt from 'jsonwebtoken'
 
 /**
- * Normaliza nombres de roles comunes y sinónimos
+ * Normaliza nombres de roles comunes y sinónimos.
+ * Los roles del sistema se devuelven en MAYÚSCULAS sin colapsar roles distintos.
+ *
+ * Roles válidos: GOD · ADMIN · DIRECTOR · REGENTE · SECRETARIA · PRECEPTORIA
+ *                INSTRUCTOR · ALUMNO · POSTULANTE
+ *                DIRECTIVO (backward compat — tokens anteriores)
  */
 const normalizeRole = (role) => {
     if (!role) return ''
     const r = role.toString().trim().toUpperCase()
-    if (r === 'ALUMNO' || r === 'STUDENT') return 'ESTUDIANTE'
-    if (r === 'PROFESOR' || r === 'TEACHER' || r === 'INSTRUCTOR') return 'DOCENTE'
+    if (r === 'STUDENT' || r === 'ESTUDIANTE') return 'ALUMNO'
+    if (r === 'PROFESOR' || r === 'TEACHER') return 'INSTRUCTOR'  // sinónimos
     if (r === 'ADMINISTRADOR') return 'ADMIN'
-    if (r === 'DIRECTOR' || r === 'SECRETARIA' || r === 'SECRETARÍA') return 'DIRECTIVO'
+    if (r === 'SECRETARÍA') return 'SECRETARIA'                   // normalizar tilde
+    // GOD, ADMIN, DIRECTOR, REGENTE, SECRETARIA, PRECEPTORIA,
+    // INSTRUCTOR, ALUMNO, POSTULANTE, DIRECTIVO → pasan tal cual
     return r
 }
 
@@ -126,25 +133,43 @@ export const authorizeRoles = (...allowedRoles) => {
     }
 }
 
-/**
- * Middleware: Exclusivo para Administradores y Directivos
- */
-export const requireAdmin = authorizeRoles('ADMIN', 'DIRECTIVO')
+/** Roles con CRUD completo (Instructores y secciones administrativas) */
+export const CRUD_ROLES_SERVER = ['GOD', 'ADMIN', 'DIRECTOR', 'REGENTE', 'DIRECTIVO']
+
+/** Roles con solo lectura */
+export const READ_ONLY_ROLES_SERVER = ['SECRETARIA', 'PRECEPTORIA']
+
+/** Todos los roles con algún acceso */
+export const ACCESS_ROLES_SERVER = [...CRUD_ROLES_SERVER, ...READ_ONLY_ROLES_SERVER]
 
 /**
- * Middleware: Exclusivo para Personal Educativo (Docentes, Directivos y Admins)
+ * Middleware: Exclusivo para Administradores y roles con CRUD completo
  */
-export const requireStaff = authorizeRoles('DOCENTE', 'DIRECTIVO', 'ADMIN')
+export const requireAdmin = authorizeRoles(
+    'GOD', 'ADMIN', 'DIRECTOR', 'REGENTE', 'DIRECTIVO'
+)
 
 /**
- * Middleware: Exclusivo para Docentes (y administradores con permiso superior)
+ * Middleware: Exclusivo para Personal Educativo con acceso de lectura o superior
  */
-export const requireDocente = authorizeRoles('DOCENTE', 'DIRECTIVO', 'ADMIN')
+export const requireStaff = authorizeRoles(
+    'GOD', 'ADMIN', 'DIRECTOR', 'REGENTE', 'DIRECTIVO',
+    'SECRETARIA', 'PRECEPTORIA', 'INSTRUCTOR'
+)
 
 /**
- * Middleware: Exclusivo para Estudiantes (o Admins para gestión/supervisión)
+ * Middleware: Exclusivo para Docentes / Instructores (y roles superiores)
  */
-export const requireEstudiante = authorizeRoles('ESTUDIANTE', 'DIRECTIVO', 'ADMIN')
+export const requireDocente = authorizeRoles(
+    'INSTRUCTOR', 'GOD', 'ADMIN', 'DIRECTOR', 'REGENTE', 'DIRECTIVO'
+)
+
+/**
+ * Middleware: Exclusivo para Alumnos (o Admins para gestión/supervisión)
+ */
+export const requireEstudiante = authorizeRoles(
+    'ALUMNO', 'POSTULANTE', 'GOD', 'ADMIN', 'DIRECTOR', 'REGENTE', 'DIRECTIVO'
+)
 
 /**
  * Middleware: Permite el acceso únicamente si el recurso consultado pertenece al propio usuario

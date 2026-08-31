@@ -19,6 +19,7 @@ function toClientShape(staff) {
         profile_photo_url: staff.profilePhotoUrl,
         course_name: staff.instructedCourses?.[0]?.name ?? null,
         assigned_courses: staff.instructedCourses?.map(c => c.name) ?? [],
+        assigned_course_ids: staff.instructedCourses?.map(c => c.id) ?? [],
         created_at: staff.createdAt,
     }
 }
@@ -95,7 +96,7 @@ export const getStaffById = async (req, res, next) => {
  * POST /api/v1/instructores
  * Crea un nuevo instructor (Staff + StaffDetail) en una transacción.
  * Body esperado (snake_case desde el frontend):
- *   first_name, last_name, email, dni, status_id, role_id, phone?, address?, profile_photo_url?
+ *   first_name, last_name, email, dni, status_id, role_id, phone?, address?, profile_photo_url?, assigned_course_ids?
  */
 export const createStaff = async (req, res, next) => {
     try {
@@ -104,11 +105,12 @@ export const createStaff = async (req, res, next) => {
             last_name,
             email,
             dni,
-            status_id,
-            role_id,
+            status_id = 1,
+            role_id = 7,
             phone,
             address,
             profile_photo_url,
+            assigned_course_ids,
         } = req.body
 
         const newStaff = await prisma.$transaction(async (tx) => {
@@ -119,7 +121,7 @@ export const createStaff = async (req, res, next) => {
                     email,
                     dni,
                     statusId: status_id,
-                    roleId: role_id,
+                    roleId: role_id || 7,
                     profilePhotoUrl: profile_photo_url || null,
                     userDetail: {
                         create: {
@@ -129,6 +131,14 @@ export const createStaff = async (req, res, next) => {
                     },
                 },
             })
+
+            // Asignar cursos seleccionados a este nuevo instructor
+            if (assigned_course_ids && Array.isArray(assigned_course_ids) && assigned_course_ids.length > 0) {
+                await tx.course.updateMany({
+                    where: { id: { in: assigned_course_ids } },
+                    data: { instructorId: staff.id },
+                })
+            }
 
             return tx.user.findUnique({
                 where: { id: staff.id },
@@ -164,6 +174,7 @@ export const updateStaff = async (req, res, next) => {
             phone,
             address,
             profile_photo_url,
+            assigned_course_ids,
         } = req.body
 
         const updatedStaff = await prisma.$transaction(async (tx) => {
@@ -208,6 +219,34 @@ export const updateStaff = async (req, res, next) => {
                         ...detailData,
                     },
                 })
+            }
+
+            // Actualizar cursos asignados si se enviaron
+            if (assigned_course_ids !== undefined && Array.isArray(assigned_course_ids)) {
+                // 1. Asignar los cursos seleccionados a este instructor
+                if (assigned_course_ids.length > 0) {
+                    await tx.course.updateMany({
+                        where: { id: { in: assigned_course_ids } },
+                        data: { instructorId: id },
+                    })
+                }
+
+                // 2. Para cursos que antes estaban asignados a este instructor pero ya no:
+                const fallbackInstructor = await tx.user.findFirst({
+                    where: {
+                        role: { name: { in: ['INSTRUCTOR', 'ADMIN', 'GOD', 'DIRECTOR'] } },
+                        id: { not: id },
+                    },
+                })
+                if (fallbackInstructor) {
+                    await tx.course.updateMany({
+                        where: {
+                            instructorId: id,
+                            id: { notIn: assigned_course_ids },
+                        },
+                        data: { instructorId: fallbackInstructor.id },
+                    })
+                }
             }
 
             // Retornar el staff actualizado con relaciones
