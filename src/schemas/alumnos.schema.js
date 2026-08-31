@@ -91,6 +91,8 @@ export const createAlumnoSchema = z
     status_id: z.number().optional(),
     role_name: z.string().optional(),
     profile_photo_url: z.string().optional().nullable(),
+    accepted_terms: z.boolean().optional(),
+    acceptedTerms: z.boolean().optional(),
   })
   // Regla de seguridad: el teléfono principal y el teléfono de emergencia deben ser diferentes
   .refine(
@@ -142,6 +144,8 @@ export const updateAlumnoSchema = z
     status_id: z.number().optional(),
     role_name: z.string().optional(),
     profile_photo_url: z.string().optional().nullable(),
+    accepted_terms: z.boolean().optional(),
+    acceptedTerms: z.boolean().optional(),
   })
   .refine(
     (data) => {

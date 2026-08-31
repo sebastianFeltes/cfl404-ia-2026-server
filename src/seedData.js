@@ -141,11 +141,13 @@ export async function autoSeedDatabase() {
     if (!defaultRole) return
 
     // 2. Poblar estudiantes si hay menos de 5
-    const count = await prisma.student.count()
+    const count = await prisma.user.count({
+      where: { role: { name: { in: ['Alumno', 'ALUMNO', 'Aspirante', 'POSTULANTE'] } } }
+    })
     if (count < 5) {
       console.log('Inicializando nómina inicial de alumnos en SQLite...')
       for (const s of MOCK_STUDENTS_SEED) {
-        const exists = await prisma.student.findFirst({
+        const exists = await prisma.user.findFirst({
           where: { OR: [{ dni: s.dni }, { email: s.email }] }
         })
 
@@ -153,7 +155,7 @@ export async function autoSeedDatabase() {
           const isAspirante = s.status_id === 3
           const roleId = isAspirante && aspiranteRole ? aspiranteRole.id : defaultRole.id
 
-          await prisma.student.create({
+          await prisma.user.create({
             data: {
               firstName: s.first_name,
               lastName: s.last_name,
@@ -162,7 +164,8 @@ export async function autoSeedDatabase() {
               statusId: s.status_id,
               roleId,
               profilePhotoUrl: s.profile_photo_url,
-              studentDetail: {
+              acceptedTerms: true,
+              userDetail: {
                 create: {
                   phone: s.phone,
                   address: s.address,

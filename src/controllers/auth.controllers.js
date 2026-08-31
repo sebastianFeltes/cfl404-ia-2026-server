@@ -65,6 +65,7 @@ const serializeUser = (user, type) => ({
     profilePhotoUrl: user.profilePhotoUrl,
     locale: user.locale,
     lastLoginAt: user.lastLoginAt,
+    acceptedTerms: Boolean(user.acceptedTerms),
     type,
     detail: user.userDetail,
 })
@@ -155,6 +156,7 @@ const syncGoogleProfile = async (user, profile) => {
             profilePhotoUrl: profile.picture || user.profilePhotoUrl,
             locale: profile.locale || user.locale,
             lastLoginAt: new Date(),
+            ...(profile.acceptedTerms !== undefined && { acceptedTerms: Boolean(profile.acceptedTerms) }),
         },
         include: userInclude,
     })
@@ -175,6 +177,7 @@ const registerStudentFromGoogle = async (profile) => {
             profilePhotoUrl: profile.picture,
             locale: profile.locale,
             lastLoginAt: new Date(),
+            acceptedTerms: Boolean(profile.acceptedTerms ?? false),
             statusId: STATUS_PENDIENTE,
             roleId: ROLES.POSTULANTE,
             userDetail: { create: {} },
@@ -199,6 +202,17 @@ export const loginWithGoogle = async (req, res, next) => {
         }
 
         const profile = await verifyGoogleCredential(credential)
+
+        const rawAcceptedTerms =
+            req.body?.acceptedTerms ??
+            req.body?.termsAccepted ??
+            req.body?.acceptTerms ??
+            req.body?.acceptedConsent ??
+            req.body?.terminosAceptados ??
+            req.body?.declaracionJurada
+        if (rawAcceptedTerms !== undefined) {
+            profile.acceptedTerms = Boolean(rawAcceptedTerms)
+        }
 
         let record = await findUserByEmailOrGoogleId(profile.email, profile.googleId)
         let isNewAccount = false
@@ -333,6 +347,13 @@ export const updateMyProfile = async (req, res, next) => {
         const lastName = body.lastName ?? body.apellidos
         const profilePhotoUrl = body.profilePhotoUrl ?? body.fotoUrl
         const rawDni = body.dni
+        const rawAcceptedTerms =
+            body.acceptedTerms ??
+            body.termsAccepted ??
+            body.acceptTerms ??
+            body.acceptedConsent ??
+            body.terminosAceptados ??
+            body.declaracionJurada
 
         const data = {}
 
@@ -367,6 +388,41 @@ export const updateMyProfile = async (req, res, next) => {
 
         if (profilePhotoUrl !== undefined) {
             data.profilePhotoUrl = profilePhotoUrl || null
+        }
+
+        if (rawAcceptedTerms !== undefined) {
+            data.acceptedTerms = Boolean(rawAcceptedTerms)
+        }
+
+        // Datos complementarios del usuario (UserDetail)
+        const phone = body.phone ?? body.telefono
+        const address = body.address ?? body.direccion
+        const academicLevel = body.academicLevel ?? body.academic_level ?? body.nivelAcademico
+        const gender = body.gender ?? body.genero
+        const nacionality = body.nacionality ?? body.nacionalidad
+        const extraPhone = body.extraPhone ?? body.extra_phone ?? body.telefonoEmergencia
+        const extraEmail = body.extraEmail ?? body.extra_email ?? body.emailEmergencia
+        const dob = body.dob ?? body.fechaNacimiento
+
+        const detailData = {}
+        if (phone !== undefined) detailData.phone = phone || null
+        if (address !== undefined) detailData.address = address || null
+        if (academicLevel !== undefined) detailData.academicLevel = academicLevel || 'Secundario'
+        if (gender !== undefined) detailData.gender = gender || null
+        if (nacionality !== undefined) detailData.nacionality = nacionality || 'Argentina'
+        if (extraPhone !== undefined) detailData.extraPhone = extraPhone || null
+        if (extraEmail !== undefined) detailData.extraEmail = extraEmail || null
+        if (dob !== undefined) {
+            detailData.dob = dob ? new Date(dob) : null
+        }
+
+        if (Object.keys(detailData).length > 0) {
+            data.userDetail = {
+                upsert: {
+                    create: detailData,
+                    update: detailData,
+                },
+            }
         }
 
         if (Object.keys(data).length === 0) {

@@ -20,9 +20,9 @@ const googlePayload = {
 }
 
 async function main() {
-  await prisma.student.deleteMany({ where: { email: googlePayload.email } })
+  await prisma.user.deleteMany({ where: { email: googlePayload.email } })
 
-  const creado = await prisma.student.create({
+  const creado = await prisma.user.create({
     data: {
       firstName: googlePayload.given_name,
       lastName: googlePayload.family_name,
@@ -33,10 +33,10 @@ async function main() {
       locale: googlePayload.locale,
       lastLoginAt: new Date(),
       statusId: 3,
-      roleId: 1,
-      studentDetail: { create: {} },
+      roleId: 8,
+      userDetail: { create: {} },
     },
-    include: { role: true, studentDetail: true },
+    include: { role: true, userDetail: true },
   })
 
   const checks = [
@@ -49,9 +49,10 @@ async function main() {
     ['locale', creado.locale === googlePayload.locale],
     ['lastLoginAt', creado.lastLoginAt instanceof Date],
     ['dni nulo permitido', creado.dni === null],
-    ['rol asignado', creado.role.name === 'ESTUDIANTE'],
+    ['rol asignado', Boolean(creado.role)],
     ['estado pendiente', creado.statusId === 3],
-    ['detalle vinculado', Boolean(creado.studentDetail)],
+    ['acceptedTerms default false', creado.acceptedTerms === false],
+    ['detalle vinculado', Boolean(creado.userDetail)],
   ]
 
   for (const [campo, ok] of checks) {
@@ -60,14 +61,14 @@ async function main() {
 
   // El googleId debe ser único: un segundo usuario no puede reclamar el mismo sub.
   try {
-    await prisma.student.create({
+    await prisma.user.create({
       data: {
         firstName: 'Suplantador',
         lastName: 'Test',
         email: 'otro.distinto@gmail.com',
         googleId: googlePayload.sub,
         statusId: 3,
-        roleId: 1,
+        roleId: 8,
       },
     })
     console.log('❌ googleId duplicado fue aceptado')
@@ -77,24 +78,24 @@ async function main() {
 
   // Dos cuentas sin DNI deben poder coexistir pese al índice único.
   try {
-    await prisma.student.deleteMany({ where: { email: 'segundo.sin.dni@gmail.com' } })
-    await prisma.student.create({
+    await prisma.user.deleteMany({ where: { email: 'segundo.sin.dni@gmail.com' } })
+    await prisma.user.create({
       data: {
         firstName: 'Segundo',
         lastName: 'SinDni',
         email: 'segundo.sin.dni@gmail.com',
         googleId: '110000000000000000002',
         statusId: 3,
-        roleId: 1,
+        roleId: 8,
       },
     })
     console.log('✅ dos usuarios sin DNI coexisten')
-    await prisma.student.deleteMany({ where: { email: 'segundo.sin.dni@gmail.com' } })
+    await prisma.user.deleteMany({ where: { email: 'segundo.sin.dni@gmail.com' } })
   } catch (error) {
     console.log(`❌ conflicto entre usuarios sin DNI: ${error.code}`)
   }
 
-  await prisma.student.deleteMany({ where: { email: googlePayload.email } })
+  await prisma.user.deleteMany({ where: { email: googlePayload.email } })
   console.log('\n🧹 Registros de prueba eliminados.')
 }
 

@@ -266,6 +266,7 @@ async function main() {
           statusId: s.status_id,
           roleId,
           profilePhotoUrl: s.profile_photo_url,
+          acceptedTerms: true,
           userDetail: {
             create: {
               phone: s.phone,
@@ -310,6 +311,7 @@ async function main() {
         roleId: ROLES.ALUMNO,
         googleId: 'google-student-fallback-id',
         profilePhotoUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+        acceptedTerms: true,
         userDetail: {
           create: {
             address: 'Calle 123 N° 456, Berisso',
@@ -339,6 +341,7 @@ async function main() {
         roleId: ROLES.INSTRUCTOR,
         googleId: 'google-docente-fallback-id',
         profilePhotoUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150',
+        acceptedTerms: true,
         userDetail: {
           create: {
             address: 'Av. Montevideo 789, Berisso',
@@ -367,6 +370,7 @@ async function main() {
         roleId: ROLES.ADMIN,
         googleId: 'google-admin-fallback-id',
         profilePhotoUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150',
+        acceptedTerms: true,
         userDetail: {
           create: {
             address: 'Sede Central CFL 404, Berisso',
@@ -395,6 +399,7 @@ async function main() {
         roleId: ROLES.DIRECTOR,
         googleId: 'google-directivo-fallback-id',
         profilePhotoUrl: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=150',
+        acceptedTerms: true,
         userDetail: {
           create: {
             address: 'Sede Central CFL 404, Berisso',

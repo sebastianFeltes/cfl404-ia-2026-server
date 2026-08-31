@@ -24,6 +24,7 @@ model User {
   profilePhotoUrl String?        @map("profile_photo_url")
   locale          String?
   lastLoginAt     DateTime?      @map("last_login_at")
+  acceptedTerms   Boolean        @default(false) @map("accepted_terms")
   createdAt       DateTime       @default(now()) @map("created_at")
   updatedAt       DateTime       @updatedAt @map("updated_at")
 

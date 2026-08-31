@@ -113,6 +113,8 @@ export const getAlumnos = async (req, res, next) => {
         is_aspirante: isAspirante,
         role_name: s.role?.name || (isAspirante ? 'POSTULANTE' : 'ALUMNO'),
         profile_photo_url: s.profilePhotoUrl,
+        accepted_terms: Boolean(s.acceptedTerms),
+        acceptedTerms: Boolean(s.acceptedTerms),
         dni_copy: true,
         form_copy: true,
         title_copy: true,
@@ -177,6 +179,8 @@ export const getAlumnoById = async (req, res, next) => {
       is_aspirante: isAspirante,
       role_name: student.role?.name || 'ALUMNO',
       profile_photo_url: student.profilePhotoUrl,
+      accepted_terms: Boolean(student.acceptedTerms),
+      acceptedTerms: Boolean(student.acceptedTerms),
       dni_copy: true,
       form_copy: true,
       title_copy: true,
@@ -213,7 +217,11 @@ export const createAlumno = async (req, res, next) => {
       status_id,
       role_name,
       profile_photo_url,
+      accepted_terms,
+      acceptedTerms,
     } = req.body
+
+    const rawAcceptedTerms = accepted_terms ?? acceptedTerms
 
     // 1. Verificar unicidad de DNI y Email
     const existingStudent = await prisma.user.findFirst({
@@ -261,6 +269,7 @@ export const createAlumno = async (req, res, next) => {
         statusId: finalStatusId,
         roleId: alumnoRole.id,
         profilePhotoUrl: profile_photo_url || null,
+        acceptedTerms: Boolean(rawAcceptedTerms ?? false),
         userDetail: {
           create: {
             phone: phone || null,
@@ -315,6 +324,8 @@ export const createAlumno = async (req, res, next) => {
         is_aspirante: isAspirante,
         role_name: targetRoleName,
         profile_photo_url: newStudent.profilePhotoUrl,
+        accepted_terms: Boolean(newStudent.acceptedTerms),
+        acceptedTerms: Boolean(newStudent.acceptedTerms),
         dni_copy: true,
         form_copy: true,
         title_copy: true,
@@ -346,6 +357,8 @@ export const updateAlumno = async (req, res, next) => {
       status_id,
       role_name,
       profile_photo_url,
+      accepted_terms,
+      acceptedTerms,
     } = req.body
 
     const studentExists = await prisma.user.findUnique({
@@ -365,6 +378,8 @@ export const updateAlumno = async (req, res, next) => {
       finalStatusId = STATUS_TO_ID[status]
     }
 
+    const rawAcceptedTerms = accepted_terms ?? acceptedTerms
+
     // 1. Actualizar datos base del alumno
     const updatedStudent = await prisma.user.update({
       where: { id },
@@ -375,6 +390,7 @@ export const updateAlumno = async (req, res, next) => {
         ...(email && { email }),
         ...(finalStatusId !== undefined && { statusId: finalStatusId }),
         ...(profile_photo_url !== undefined && { profilePhotoUrl: profile_photo_url }),
+        ...(rawAcceptedTerms !== undefined && { acceptedTerms: Boolean(rawAcceptedTerms) }),
         userDetail: {
           upsert: {
             create: {
@@ -429,6 +445,8 @@ export const updateAlumno = async (req, res, next) => {
         course: currentCourseName,
         status_id: updatedStudent.statusId,
         status: STATUS_MAP[updatedStudent.statusId] || 'Activo',
+        accepted_terms: Boolean(updatedStudent.acceptedTerms),
+        acceptedTerms: Boolean(updatedStudent.acceptedTerms),
         updatedAt: updatedStudent.updatedAt,
       },
     })
