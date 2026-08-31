@@ -12,6 +12,12 @@ function toClientCourse(course) {
     ...course,
     staff: course.instructor,
     staffId: course.instructorId,
+    sponsor: course.courseDetail?.sponsorName ? {
+      name: course.courseDetail.sponsorName,
+      logo: course.courseDetail.sponsorLogo,
+      mention: `Patrocinado por ${course.courseDetail.sponsorName}`,
+      badge: course.courseDetail.sponsorName
+    } : null
   }
 }
 
@@ -53,6 +59,8 @@ export const createCourse = async (req, res, next) => {
       endDate,
       startTime,
       endTime,
+      preEnrollmentDate,
+      isAnnual = false,
       statusId = 1,
       staffId,
       instructorId,
@@ -62,7 +70,9 @@ export const createCourse = async (req, res, next) => {
       hourQuantity = 120,
       classesQuantity = 32,
       titleRequired = false,
-      endorsementBy = 'CFP N°404 Berisso',
+      endorsementBy = 'Ministerio de Educación y Trabajo de la Provincia de Buenos Aires',
+      sponsorName,
+      sponsorLogo,
     } = req.body
 
     let targetInstructorId = instructorId || staffId
@@ -81,6 +91,8 @@ export const createCourse = async (req, res, next) => {
       maxAbsences: Number(maxAbsences),
       startTime,
       endTime,
+      isAnnual: Boolean(isAnnual),
+      ...(preEnrollmentDate && { preEnrollmentDate: new Date(preEnrollmentDate) }),
       ...(startDate && { startDate: new Date(startDate) }),
       ...(endDate && { endDate: new Date(endDate) }),
       ...(targetInstructorId && { instructorId: targetInstructorId }),
@@ -92,6 +104,8 @@ export const createCourse = async (req, res, next) => {
           classesQuantity: Number(classesQuantity),
           titleRequired: Boolean(titleRequired),
           endorsementBy,
+          sponsorName,
+          sponsorLogo,
         },
       },
     }
@@ -120,6 +134,10 @@ export const updateCourse = async (req, res, next) => {
       classesQuantity,
       staffId,
       instructorId,
+      preEnrollmentDate,
+      isAnnual,
+      sponsorName,
+      sponsorLogo,
     } = req.body
 
     const updatedCourse = await prisma.course.update({
@@ -128,6 +146,8 @@ export const updateCourse = async (req, res, next) => {
         ...(name && { name }),
         ...(statusId !== undefined && { statusId: Number(statusId) }),
         ...(maxAbsences !== undefined && { maxAbsences: Number(maxAbsences) }),
+        ...(isAnnual !== undefined && { isAnnual: Boolean(isAnnual) }),
+        ...(preEnrollmentDate !== undefined && { preEnrollmentDate: preEnrollmentDate ? new Date(preEnrollmentDate) : null }),
         ...((instructorId || staffId) && { instructorId: instructorId || staffId }),
         courseDetail: {
           update: {
@@ -135,6 +155,8 @@ export const updateCourse = async (req, res, next) => {
             ...(quota !== undefined && { quota: Number(quota) }),
             ...(hourQuantity !== undefined && { hourQuantity: Number(hourQuantity) }),
             ...(classesQuantity !== undefined && { classesQuantity: Number(classesQuantity) }),
+            ...(sponsorName !== undefined && { sponsorName }),
+            ...(sponsorLogo !== undefined && { sponsorLogo }),
           },
         },
       },
