@@ -365,6 +365,19 @@ export const updateAlumno = async (req, res, next) => {
       finalStatusId = STATUS_TO_ID[status]
     }
 
+    let targetRoleId = undefined
+    if (req.body.role_id !== undefined) {
+      targetRoleId = req.body.role_id
+    } else if (role_name) {
+      const isPostulant = role_name.toUpperCase() === 'POSTULANTE' || role_name.toUpperCase() === 'ASPIRANTE'
+      const roleRecord = await prisma.role.findFirst({
+        where: { name: isPostulant ? 'POSTULANTE' : 'ALUMNO' },
+      })
+      if (roleRecord) {
+        targetRoleId = roleRecord.id
+      }
+    }
+
     // 1. Actualizar datos base del alumno
     const updatedStudent = await prisma.user.update({
       where: { id },
@@ -374,6 +387,7 @@ export const updateAlumno = async (req, res, next) => {
         ...(dni && { dni }),
         ...(email && { email }),
         ...(finalStatusId !== undefined && { statusId: finalStatusId }),
+        ...(targetRoleId !== undefined && { roleId: targetRoleId }),
         ...(profile_photo_url !== undefined && { profilePhotoUrl: profile_photo_url }),
         userDetail: {
           upsert: {
@@ -391,6 +405,8 @@ export const updateAlumno = async (req, res, next) => {
         },
       },
       include: {
+        role: true,
+        status: true,
         userDetail: true,
         userCourses: { include: { course: true } },
       },
