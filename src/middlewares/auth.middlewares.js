@@ -6,10 +6,10 @@ import jwt from 'jsonwebtoken'
 const normalizeRole = (role) => {
     if (!role) return ''
     const r = role.toString().trim().toUpperCase()
-    if (r === 'ALUMNO' || r === 'STUDENT') return 'ESTUDIANTE'
-    if (r === 'PROFESOR' || r === 'TEACHER' || r === 'INSTRUCTOR') return 'DOCENTE'
-    if (r === 'ADMINISTRADOR') return 'ADMIN'
-    if (r === 'DIRECTOR' || r === 'SECRETARIA' || r === 'SECRETARÍA') return 'DIRECTIVO'
+    if (['ALUMNO', 'STUDENT', 'POSTULANTE', 'ASPIRANTE'].includes(r)) return 'ESTUDIANTE'
+    if (['PROFESOR', 'TEACHER', 'INSTRUCTOR', 'DOCENTE'].includes(r)) return 'DOCENTE'
+    if (['ADMINISTRADOR', 'ADMIN', 'GOD', 'DIOS', 'SUPERADMIN', 'ROOT'].includes(r)) return 'ADMIN'
+    if (['DIRECTOR', 'DIRECTIVO', 'SECRETARIA', 'SECRETARÍA', 'REGENTE', 'PRECEPTORIA', 'PRECEPTOR'].includes(r)) return 'DIRECTIVO'
     return r
 }
 
@@ -113,6 +113,11 @@ export const authorizeRoles = (...allowedRoles) => {
         }
 
         const userRole = normalizeRole(req.user.role)
+
+        // Superadmin / Modo Dios / Admin tiene acceso irrestricto
+        if (userRole === 'ADMIN' || ['GOD', 'DIOS', 'SUPERADMIN', 'ROOT'].includes(String(req.user.role).toUpperCase())) {
+            return next()
+        }
 
         if (!rolesList.includes(userRole)) {
             return res.status(403).json({

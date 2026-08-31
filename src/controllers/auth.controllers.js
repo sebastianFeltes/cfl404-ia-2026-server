@@ -263,6 +263,8 @@ export const devLoginFallback = async (req, res, next) => {
         const { accountType = 'alumno', email } = req.body || {}
 
         const demoAccounts = {
+            god: 'admin.test@cfl404.edu.ar',
+            dios: 'admin.test@cfl404.edu.ar',
             alumno: 'alumno.test@cfl404.edu.ar',
             estudiante: 'alumno.test@cfl404.edu.ar',
             docente: 'docente.test@cfl404.edu.ar',
@@ -322,7 +324,12 @@ export const getMyProfile = async (req, res, next) => {
             return res.status(404).json({ error: 'Usuario no encontrado' })
         }
 
-        return res.json({ user: serializeUser(record.user, record.type) })
+        const token = generateAuthToken(record.user, record.type)
+
+        return res.json({
+            user: serializeUser(record.user, record.type),
+            token,
+        })
     } catch (error) {
         next(error)
     }
@@ -359,16 +366,16 @@ export const updateMyProfile = async (req, res, next) => {
 
         if (firstName !== undefined) {
             const value = String(firstName).trim()
-            if (value.length < 2) {
-                return res.status(400).json({ error: 'El nombre debe tener al menos 2 caracteres' })
+            if (!value) {
+                return res.status(400).json({ error: 'El nombre no puede estar vacío' })
             }
             data.firstName = value
         }
 
         if (lastName !== undefined) {
             const value = String(lastName).trim()
-            if (value.length < 2) {
-                return res.status(400).json({ error: 'El apellido debe tener al menos 2 caracteres' })
+            if (!value) {
+                return res.status(400).json({ error: 'El apellido no puede estar vacío' })
             }
             data.lastName = value
         }
@@ -435,9 +442,13 @@ export const updateMyProfile = async (req, res, next) => {
             include: userInclude,
         })
 
+        const updatedType = typeFromRole(updated.role.name)
+        const token = generateAuthToken(updated, updatedType)
+
         return res.json({
             message: 'Perfil actualizado',
-            user: serializeUser(updated, record.type),
+            user: serializeUser(updated, updatedType),
+            token,
         })
     } catch (error) {
         next(error)
