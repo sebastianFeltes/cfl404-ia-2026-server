@@ -27,11 +27,12 @@ model User {
   createdAt       DateTime       @default(now()) @map("created_at")
   updatedAt       DateTime       @updatedAt @map("updated_at")
 
-  role              Role         @relation(fields: [roleId], references: [id])
-  status            Status       @relation(fields: [statusId], references: [id])
+  role              Role                 @relation(fields: [roleId], references: [id])
+  status            Status               @relation(fields: [statusId], references: [id])
   userDetail        UserDetail?
   userCourses       UserCourse[]
-  instructedCourses Course[]     @relation("CourseInstructor")
+  instructedCourses Course[]             @relation("CourseInstructor")
+  cooperadoraPayments CooperadoraPayment[]
 
   @@map("users")
 }
@@ -208,4 +209,34 @@ model Setting {
   value String
 
   @@map("setting")
+}
+
+model CooperadoraPayment {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  month       Int
+  year        Int
+  amount      Float
+  paymentDate DateTime @default(now()) @map("payment_date")
+  notes       String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, month, year])
+  @@map("cooperadora_payment")
+}
+
+model BuffetMovement {
+  id           String   @id @default(uuid())
+  date         DateTime @default(now())
+  amount       Float
+  type         String   // "ingreso" | "egreso"
+  detail       String
+  observations String?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("buffet_movement")
 }

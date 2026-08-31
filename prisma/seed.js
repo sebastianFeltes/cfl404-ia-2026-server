@@ -410,6 +410,118 @@ async function main() {
     console.log(`ℹ️ Director de prueba ya existe: ${directorEmail}`)
   }
 
+  // ── Seeder de Cuotas de Cooperadora ─────────────────────────────────────
+  console.log('💳 Poblando cuotas de Cooperadora...')
+  const currentYear = new Date().getFullYear()
+  const seededStudents = await prisma.user.findMany({
+    where: { role: { name: 'ALUMNO' } },
+    take: 6,
+  })
+
+  if (seededStudents.length > 0) {
+    // Estudiante 1: 5 cuotas abonadas
+    const s1 = seededStudents[0]
+    for (let month = 1; month <= 5; month++) {
+      await prisma.cooperadoraPayment.upsert({
+        where: { userId_month_year: { userId: s1.id, month, year: currentYear } },
+        update: { amount: 3000, notes: 'Cuota regular mensual' },
+        create: {
+          userId: s1.id,
+          month,
+          year: currentYear,
+          amount: 3000,
+          paymentDate: new Date(`${currentYear}-0${month}-10`),
+          notes: 'Cuota regular mensual',
+        },
+      })
+    }
+
+    // Estudiante 2: 3 cuotas abonadas
+    if (seededStudents[1]) {
+      const s2 = seededStudents[1]
+      for (let month = 1; month <= 3; month++) {
+        await prisma.cooperadoraPayment.upsert({
+          where: { userId_month_year: { userId: s2.id, month, year: currentYear } },
+          update: { amount: 3000, notes: 'Transferencia bancaria' },
+          create: {
+            userId: s2.id,
+            month,
+            year: currentYear,
+            amount: 3000,
+            paymentDate: new Date(`${currentYear}-0${month}-15`),
+            notes: 'Transferencia bancaria',
+          },
+        })
+      }
+    }
+
+    // Estudiante 3: 1 cuota abonada
+    if (seededStudents[2]) {
+      const s3 = seededStudents[2]
+      await prisma.cooperadoraPayment.upsert({
+        where: { userId_month_year: { userId: s3.id, month: 1, year: currentYear } },
+        update: { amount: 3000, notes: 'Efectivo secretaría' },
+        create: {
+          userId: s3.id,
+          month: 1,
+          year: currentYear,
+          amount: 3000,
+          paymentDate: new Date(`${currentYear}-01-20`),
+          notes: 'Efectivo secretaría',
+        },
+      })
+    }
+    console.log('✅ Cuotas de cooperadora sembradas.')
+  }
+
+  // ── Seeder de Movimientos de Buffet ──────────────────────────────────────
+  console.log('🥪 Poblando movimientos de Buffet...')
+  const existingBuffet = await prisma.buffetMovement.count()
+  if (existingBuffet === 0) {
+    const buffetSamples = [
+      {
+        date: new Date(`${currentYear}-08-28`),
+        amount: 24500,
+        type: 'ingreso',
+        detail: 'Recaudación cafetería turno mañana',
+        observations: 'Venta de café, medialunas y tostados',
+      },
+      {
+        date: new Date(`${currentYear}-08-27`),
+        amount: 18200,
+        type: 'ingreso',
+        detail: 'Venta de meriendas turno tarde',
+        observations: 'Bebidas y snacks',
+      },
+      {
+        date: new Date(`${currentYear}-08-25`),
+        amount: 12000,
+        type: 'egreso',
+        detail: 'Compra de insumos: café, leche y azúcar',
+        observations: 'Ticket mayorista #9921',
+      },
+      {
+        date: new Date(`${currentYear}-08-22`),
+        amount: 31000,
+        type: 'ingreso',
+        detail: 'Recaudación jornada especial de cursos',
+        observations: 'Turnos mañana y tarde',
+      },
+      {
+        date: new Date(`${currentYear}-08-18`),
+        amount: 8500,
+        type: 'egreso',
+        detail: 'Servilletas, vasos descartables y limpieza',
+        observations: 'Comprobante #1142',
+      },
+    ]
+
+    for (const b of buffetSamples) {
+      await prisma.buffetMovement.create({ data: b })
+    }
+    console.log('✅ Movimientos de buffet sembrados.')
+  }
+
   console.log('✨ Base de datos poblada exitosamente.')
 }
 
