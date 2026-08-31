@@ -59,17 +59,19 @@ model UserDetail {
 }
 
 model Course {
-  id               String            @id @default(uuid())
-  name             String
-  startDate        DateTime?         @map("start_date")
-  endDate          DateTime?         @map("end_date")
-  startTime        String?           @map("start_time")
-  endTime          String?           @map("end_time")
-  statusId         Int               @map("status_id")
-  instructorId     String            @map("instructor_id")
-  maxAbsences      Int               @map("max_absences")
-  createdAt        DateTime          @default(now()) @map("created_at")
-  updatedAt        DateTime          @updatedAt @map("updated_at")
+  id                String            @id @default(uuid())
+  name              String
+  startDate         DateTime?         @map("start_date")
+  endDate           DateTime?         @map("end_date")
+  startTime         String?           @map("start_time")
+  endTime           String?           @map("end_time")
+  preEnrollmentDate DateTime?         @map("pre_enrollment_date")
+  isAnnual          Boolean           @default(false) @map("is_annual")
+  statusId          Int               @map("status_id")
+  instructorId      String            @map("instructor_id")
+  maxAbsences       Int               @map("max_absences")
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
 
   status           Status            @relation(fields: [statusId], references: [id])
   instructor       User              @relation("CourseInstructor", fields: [instructorId], references: [id])
@@ -90,6 +92,8 @@ model CourseDetail {
   classesQuantity Int      @map("classes_quantity")
   titleRequired   Boolean  @default(false) @map("title_required")
   endorsementBy   String?  @map("endorsement_by")
+  sponsorName     String?  @map("sponsor_name")
+  sponsorLogo     String?  @map("sponsor_logo")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
