@@ -1,16 +1,47 @@
 import jwt from 'jsonwebtoken'
 
 /**
- * Normaliza nombres de roles comunes y sinónimos
+ * Normaliza sinónimos pero no colapsa roles distintos
+ * (SECRETARIA ≠ DIRECTOR, necesario para permisos de Instructores).
+ *
+ * Roles válidos: GOD · ADMIN · DIRECTOR · REGENTE · SECRETARIA · PRECEPTORIA
+ *                INSTRUCTOR · ALUMNO · POSTULANTE
  */
 const normalizeRole = (role) => {
     if (!role) return ''
     const r = role.toString().trim().toUpperCase()
-    if (['ALUMNO', 'STUDENT', 'POSTULANTE', 'ASPIRANTE'].includes(r)) return 'ESTUDIANTE'
-    if (['PROFESOR', 'TEACHER', 'INSTRUCTOR', 'DOCENTE'].includes(r)) return 'DOCENTE'
-    if (['ADMINISTRADOR', 'ADMIN', 'GOD', 'DIOS', 'SUPERADMIN', 'ROOT'].includes(r)) return 'ADMIN'
-    if (['DIRECTOR', 'DIRECTIVO', 'SECRETARIA', 'SECRETARÍA', 'REGENTE', 'PRECEPTORIA', 'PRECEPTOR'].includes(r)) return 'DIRECTIVO'
+    if (['DIOS', 'SUPERADMIN', 'ROOT'].includes(r)) return 'GOD'
+    if (r === 'ADMINISTRADOR') return 'ADMIN'
+    if (r === 'DIRECTIVO') return 'DIRECTOR'
+    if (r === 'SECRETARÍA') return 'SECRETARIA'
+    if (r === 'PRECEPTOR') return 'PRECEPTORIA'
+    if (['PROFESOR', 'TEACHER', 'DOCENTE'].includes(r)) return 'INSTRUCTOR'
+    if (['STUDENT', 'ESTUDIANTE'].includes(r)) return 'ALUMNO'
+    if (r === 'ASPIRANTE') return 'POSTULANTE'
     return r
+}
+
+/** Equivalencias para rutas viejas que piden DIRECTIVO / DOCENTE / ESTUDIANTE */
+const ROLE_EQUIVALENTS = {
+    DIRECTOR: ['DIRECTOR', 'DIRECTIVO', 'REGENTE'],
+    DIRECTIVO: ['DIRECTIVO', 'DIRECTOR', 'REGENTE'],
+    REGENTE: ['REGENTE', 'DIRECTOR', 'DIRECTIVO'],
+    DOCENTE: ['DOCENTE', 'INSTRUCTOR'],
+    INSTRUCTOR: ['INSTRUCTOR', 'DOCENTE'],
+    ESTUDIANTE: ['ESTUDIANTE', 'ALUMNO', 'POSTULANTE', 'ASPIRANTE'],
+    ALUMNO: ['ALUMNO', 'ESTUDIANTE'],
+    POSTULANTE: ['POSTULANTE', 'ASPIRANTE', 'ESTUDIANTE'],
+    ADMIN: ['ADMIN', 'GOD', 'DIOS', 'SUPERADMIN', 'ROOT', 'ADMINISTRADOR'],
+    GOD: ['GOD', 'DIOS', 'SUPERADMIN', 'ROOT', 'ADMIN'],
+}
+
+const roleIsAllowed = (userRole, allowedRoles) => {
+    if (allowedRoles.includes(userRole)) return true
+    for (const allowed of allowedRoles) {
+        const equivalents = ROLE_EQUIVALENTS[allowed] || [allowed]
+        if (equivalents.includes(userRole)) return true
+    }
+    return false
 }
 
 /**
@@ -115,11 +146,11 @@ export const authorizeRoles = (...allowedRoles) => {
         const userRole = normalizeRole(req.user.role)
 
         // Superadmin / Modo Dios / Admin tiene acceso irrestricto
-        if (userRole === 'ADMIN' || ['GOD', 'DIOS', 'SUPERADMIN', 'ROOT'].includes(String(req.user.role).toUpperCase())) {
+        if (userRole === 'ADMIN' || userRole === 'GOD' || ['GOD', 'DIOS', 'SUPERADMIN', 'ROOT'].includes(String(req.user.role).toUpperCase())) {
             return next()
         }
 
-        if (!rolesList.includes(userRole)) {
+        if (!roleIsAllowed(userRole, rolesList)) {
             return res.status(403).json({
                 error: `Acceso denegado: Se requiere uno de los siguientes roles: [${rolesList.join(', ')}]`,
                 requiredRoles: rolesList,
@@ -131,29 +162,47 @@ export const authorizeRoles = (...allowedRoles) => {
     }
 }
 
-/**
- * Middleware: Exclusivo para Administradores y Directivos
- */
-export const requireAdmin = authorizeRoles('ADMIN', 'DIRECTIVO')
+/** Roles con CRUD completo (Instructores y secciones administrativas) */
+export const CRUD_ROLES_SERVER = ['GOD', 'ADMIN', 'DIRECTOR', 'REGENTE', 'DIRECTIVO']
+
+/** Roles con solo lectura */
+export const READ_ONLY_ROLES_SERVER = ['SECRETARIA', 'PRECEPTORIA']
+
+/** Todos los roles con algún acceso */
+export const ACCESS_ROLES_SERVER = [...CRUD_ROLES_SERVER, ...READ_ONLY_ROLES_SERVER]
 
 /**
- * Middleware: Exclusivo para Personal Educativo (Docentes, Directivos y Admins)
+ * Middleware: Exclusivo para Administradores y roles con CRUD completo
  */
-export const requireStaff = authorizeRoles('DOCENTE', 'DIRECTIVO', 'ADMIN')
+export const requireAdmin = authorizeRoles(
+    'GOD', 'ADMIN', 'DIRECTOR', 'REGENTE', 'DIRECTIVO'
+)
 
 /**
- * Middleware: Exclusivo para Docentes (y administradores con permiso superior)
+ * Middleware: Exclusivo para Personal Educativo con acceso de lectura o superior
  */
-export const requireDocente = authorizeRoles('DOCENTE', 'DIRECTIVO', 'ADMIN')
+export const requireStaff = authorizeRoles(
+    'GOD', 'ADMIN', 'DIRECTOR', 'REGENTE', 'DIRECTIVO',
+    'SECRETARIA', 'PRECEPTORIA', 'INSTRUCTOR'
+)
 
 /**
- * Middleware: Exclusivo para Estudiantes (o Admins para gestión/supervisión)
+ * Middleware: Exclusivo para Docentes / Instructores (y roles superiores)
  */
-export const requireEstudiante = authorizeRoles('ESTUDIANTE', 'DIRECTIVO', 'ADMIN')
+export const requireDocente = authorizeRoles(
+    'INSTRUCTOR', 'GOD', 'ADMIN', 'DIRECTOR', 'REGENTE', 'DIRECTIVO'
+)
+
+/**
+ * Middleware: Exclusivo para Alumnos (o Admins para gestión/supervisión)
+ */
+export const requireEstudiante = authorizeRoles(
+    'ALUMNO', 'POSTULANTE', 'GOD', 'ADMIN', 'DIRECTOR', 'REGENTE', 'DIRECTIVO'
+)
 
 /**
  * Middleware: Permite el acceso únicamente si el recurso consultado pertenece al propio usuario
- * (ej: /api/students/:id) o si el usuario que consulta tiene rol ADMIN / DIRECTIVO / DOCENTE.
+ * (ej: /api/students/:id) o si el usuario que consulta tiene rol de personal.
  *
  * @param {string} paramKey - Nombre del parámetro en req.params (por defecto 'id' o 'studentId')
  */
@@ -165,7 +214,8 @@ export const requireSelfOrStaff = (paramKey = 'id') => {
 
         const resourceId = req.params[paramKey]
         const isSelf = req.user.id === resourceId
-        const isStaff = ['ADMIN', 'DIRECTIVO', 'DOCENTE'].includes(normalizeRole(req.user.role))
+        const role = normalizeRole(req.user.role)
+        const isStaff = ACCESS_ROLES_SERVER.includes(role) || role === 'INSTRUCTOR' || role === 'DOCENTE'
 
         if (!isSelf && !isStaff) {
             return res.status(403).json({

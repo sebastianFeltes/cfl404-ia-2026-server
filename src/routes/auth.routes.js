@@ -13,6 +13,8 @@ const authRouter = Router()
 authRouter.post('/api/auth/google', loginWithGoogle)
 authRouter.post('/api/auth/dev-login', devLoginFallback)
 
+
+
 // Rutas protegidas
 authRouter.get('/api/auth/me', authenticateToken, getMyProfile)
 authRouter.patch('/api/auth/me', authenticateToken, updateMyProfile)

@@ -29,9 +29,11 @@ export const createStaffSchema = z.object({
             message: 'El estado debe ser 1 (Activo), 2 (Inactivo) o 3 (Licencia)'
         }),
     role_id: z
-        .number({ required_error: 'El rol es obligatorio' })
+        .number()
         .int('El rol debe ser un número entero')
-        .positive('El rol debe ser un número positivo'),
+        .positive('El rol debe ser un número positivo')
+        .optional()
+        .default(7),
     phone: z
         .string()
         .max(30, 'El teléfono no puede exceder 30 caracteres')
@@ -47,6 +49,11 @@ export const createStaffSchema = z.object({
     profile_photo_url: z
         .string()
         .url('La URL de la foto no es válida')
+        .or(z.literal(''))
+        .optional()
+        .nullable(),
+    assigned_course_ids: z
+        .array(z.string())
         .optional()
         .nullable(),
 })
