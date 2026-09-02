@@ -10,6 +10,7 @@ import CourseRouter from './routes/course.routes.js'
 import StaffRouter from './routes/staff.routes.js'
 import AlumnosRouter from './routes/alumnos.routes.js'
 import CooperadoraRouter from './routes/cooperadora.routes.js'
+import SettingsRouter from './routes/settings.routes.js'
 import { globalErrorHandler } from './middlewares/errorHandler.middlewares.js'
 
 const app = express()
@@ -68,6 +69,7 @@ app.use(StaffRouter)
 app.use('/api', AlumnosRouter)
 app.use('/api/v1', AlumnosRouter)
 app.use(CooperadoraRouter)
+app.use('/api', SettingsRouter)
 
 // 5. Manejador Global de Errores (Siempre al final)
 app.use(globalErrorHandler)

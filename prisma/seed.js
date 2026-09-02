@@ -522,6 +522,43 @@ async function main() {
     console.log('✅ Movimientos de buffet sembrados.')
   }
 
+  // ── KPIs institucionales ──────────────────────────────────────────────────
+  const kpis = [
+    {
+      key: 'kpi_1',
+      name: 'Cursos dictados',
+      value: '50+',
+      description: 'Especialidades con amplia salida laboral y formación práctica profesional.',
+    },
+    {
+      key: 'kpi_2',
+      name: 'Alumnos egresados',
+      value: '3500+',
+      description: 'Vecinos y vecinas que se insertaron exitosamente en el mercado laboral.',
+    },
+    {
+      key: 'kpi_3',
+      name: 'Años de trayectoria',
+      value: '10+',
+      description: 'Brindando educación pública y gratuita en Berisso y la región.',
+    },
+    {
+      key: 'kpi_4',
+      name: 'Convenios locales',
+      value: '15+',
+      description: 'Acuerdos y beneficios con el sector comercial y productivo para nuestros estudiantes.',
+    },
+  ]
+
+  for (const kpi of kpis) {
+    await prisma.setting.upsert({
+      where: { key: kpi.key },
+      update: {},
+      create: kpi,
+    })
+  }
+  console.log('✅ KPIs institucionales sembradas.')
+
   console.log('✨ Base de datos poblada exitosamente.')
 }
 
