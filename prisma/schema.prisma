@@ -209,9 +209,11 @@ model AttendanceCode {
 }
 
 model Setting {
-  id    Int    @id @default(autoincrement())
-  key   String @unique
-  value String
+  id          Int     @id @default(autoincrement())
+  key         String  @unique
+  value       String
+  name        String?
+  description String?
 
   @@map("setting")
 }
