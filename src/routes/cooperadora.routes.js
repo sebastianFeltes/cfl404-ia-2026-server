@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { authenticateToken, authorizeRoles } from '../middlewares/auth.middlewares.js'
+import { authenticateToken, authorizeRoles, requireAdmin } from '../middlewares/auth.middlewares.js'
 import { validateSchema } from '../middlewares/validateSchema.js'
 import { savePaymentSchema, createBuffetSchema } from '../schemas/cooperadora.schema.js'
 import {
@@ -35,7 +35,7 @@ CooperadoraRouter.post(
 CooperadoraRouter.delete(
   '/api/v1/cooperadora/pagos/:id',
   authenticateToken,
-  authorizeRoles(COOPERADORA_ROLES),
+  requireAdmin,
   deletePayment
 )
 
@@ -58,7 +58,7 @@ CooperadoraRouter.post(
 CooperadoraRouter.delete(
   '/api/v1/cooperadora/buffet/:id',
   authenticateToken,
-  authorizeRoles(COOPERADORA_ROLES),
+  requireAdmin,
   deleteBuffetMovement
 )
 

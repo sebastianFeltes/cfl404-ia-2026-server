@@ -1,4 +1,30 @@
 import prisma from '../lib/prisma.js'
+import { parsePagination } from '../lib/pagination.js'
+import { assertAllowedPhotoUrl } from '../lib/photo-url.js'
+
+const PRIVILEGED_ROLE_IDS = new Set([1, 2])
+const ASSIGNABLE_STAFF_ROLE_IDS = new Set([3, 4, 5, 6, 7])
+const GOD_ASSIGNABLE_ROLE_IDS = new Set([1, 2, 3, 4, 5, 6, 7])
+
+function assertStaffRoleAssignment(actorRole, targetRoleId, existingRoleId) {
+  const actor = String(actorRole || '').toUpperCase()
+  const nextId = targetRoleId == null ? existingRoleId : targetRoleId
+  const allowed = actor === 'GOD' ? GOD_ASSIGNABLE_ROLE_IDS : ASSIGNABLE_STAFF_ROLE_IDS
+
+  if (targetRoleId != null && !allowed.has(Number(targetRoleId))) {
+    const error = new Error('No tenés permiso para asignar ese rol')
+    error.statusCode = 403
+    throw error
+  }
+
+  if (actor !== 'GOD' && existingRoleId != null && PRIVILEGED_ROLE_IDS.has(Number(existingRoleId))) {
+    const error = new Error('No tenés permiso para modificar este usuario')
+    error.statusCode = 403
+    throw error
+  }
+
+  return nextId
+}
 
 /**
  * Transforma un registro Staff de Prisma (camelCase + relaciones anidadas)
@@ -42,15 +68,24 @@ const STAFF_INCLUDE = {
  */
 export const getAllStaff = async (req, res, next) => {
     try {
-        const staffList = await prisma.user.findMany({
-            where: { role: { name: { in: STAFF_ROLE_NAMES } } },
-            include: STAFF_INCLUDE,
-            orderBy: { lastName: 'asc' },
-        })
+        const { take, skip, page } = parsePagination(req.query)
+        const where = { role: { name: { in: STAFF_ROLE_NAMES } } }
+        const [staffList, total] = await Promise.all([
+            prisma.user.findMany({
+                where,
+                include: STAFF_INCLUDE,
+                orderBy: { lastName: 'asc' },
+                take,
+                skip,
+            }),
+            prisma.user.count({ where }),
+        ])
 
         res.json({
             success: true,
             data: staffList.map(toClientShape),
+            total,
+            page,
             message: 'Instructores obtenidos exitosamente',
         })
     } catch (error) {
@@ -66,8 +101,8 @@ export const getStaffById = async (req, res, next) => {
     try {
         const { id } = req.params
 
-        const staff = await prisma.user.findUnique({
-            where: { id },
+        const staff = await prisma.user.findFirst({
+            where: { id, role: { name: { in: STAFF_ROLE_NAMES } } },
             include: STAFF_INCLUDE,
         })
 
@@ -113,6 +148,9 @@ export const createStaff = async (req, res, next) => {
             assigned_course_ids,
         } = req.body
 
+        if (profile_photo_url) assertAllowedPhotoUrl(profile_photo_url)
+        const safeRoleId = assertStaffRoleAssignment(req.user?.role, role_id || 7, null) || 7
+
         const newStaff = await prisma.$transaction(async (tx) => {
             const staff = await tx.user.create({
                 data: {
@@ -121,7 +159,7 @@ export const createStaff = async (req, res, next) => {
                     email,
                     dni,
                     statusId: status_id,
-                    roleId: role_id || 7,
+                    roleId: safeRoleId,
                     profilePhotoUrl: profile_photo_url || null,
                     userDetail: {
                         create: {
@@ -177,16 +215,24 @@ export const updateStaff = async (req, res, next) => {
             assigned_course_ids,
         } = req.body
 
+        if (profile_photo_url) assertAllowedPhotoUrl(profile_photo_url)
+
         const updatedStaff = await prisma.$transaction(async (tx) => {
-            // Verificar que el instructor existe
-            const existing = await tx.user.findUnique({ where: { id } })
+            const existing = await tx.user.findFirst({
+                where: { id, role: { name: { in: STAFF_ROLE_NAMES } } },
+            })
             if (!existing) {
                 const err = new Error('Instructor no encontrado')
                 err.statusCode = 404
                 throw err
             }
 
-            // Construir datos de actualización del Staff (solo campos que llegan)
+            if (role_id !== undefined) {
+                assertStaffRoleAssignment(req.user?.role, role_id, existing.roleId)
+            } else {
+                assertStaffRoleAssignment(req.user?.role, existing.roleId, existing.roleId)
+            }
+
             const staffData = {}
             if (first_name !== undefined) staffData.firstName = first_name
             if (last_name !== undefined) staffData.lastName = last_name
@@ -282,10 +328,16 @@ export const getAllRoles = async (req, res, next) => {
         const roles = await prisma.role.findMany({
             orderBy: { name: 'asc' },
         })
+        const actor = String(req.user?.role || '').toUpperCase()
+        const visible = roles.filter((role) => {
+            if (['ALUMNO', 'POSTULANTE'].includes(role.name)) return false
+            if (actor === 'GOD') return true
+            return !['GOD', 'ADMIN'].includes(role.name)
+        })
 
         res.json({
             success: true,
-            data: roles,
+            data: visible,
             message: 'Roles obtenidos exitosamente',
         })
     } catch (error) {

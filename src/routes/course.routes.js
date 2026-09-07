@@ -2,41 +2,43 @@ import { Router } from 'express'
 import {
   getCourses,
   getCourseById,
+  getFamilies,
+  getDays,
   createCourse,
   updateCourse,
   deleteCourse
 } from '../controllers/course.controllers.js'
-import { authenticateToken, authorizeRoles } from '../middlewares/auth.middlewares.js'
-import { validateSchema } from '../middlewares/validate.middlewares.js'
+import { authenticateToken, requireAdmin } from '../middlewares/auth.middlewares.js'
+import { validate } from '../middlewares/validate.middlewares.js'
 import { createCourseSchema, updateCourseSchema } from '../validators/course.schema.js'
 
 const CourseRouter = Router()
 
-// Endpoints de Cursos para la plataforma (Pública y Administrativa)
 CourseRouter.get('/courses', getCourses)
 CourseRouter.get('/courses/:id', getCourseById)
+CourseRouter.get('/families', getFamilies)
+CourseRouter.get('/days', getDays)
 
-// Operaciones de escritura protegidas por rol administrativo y validadas con esquemas Zod
 CourseRouter.post(
-  '/courses', 
+  '/courses',
   authenticateToken,
-  authorizeRoles('ADMIN', 'DIRECTIVO'), 
-  validateSchema(createCourseSchema), 
+  requireAdmin,
+  validate(createCourseSchema, 'body'),
   createCourse
 )
 
 CourseRouter.put(
-  '/courses/:id', 
+  '/courses/:id',
   authenticateToken,
-  authorizeRoles('ADMIN', 'DIRECTIVO'), 
-  validateSchema(updateCourseSchema), 
+  requireAdmin,
+  validate(updateCourseSchema, 'body'),
   updateCourse
 )
 
 CourseRouter.delete(
-  '/courses/:id', 
+  '/courses/:id',
   authenticateToken,
-  authorizeRoles('ADMIN', 'DIRECTIVO'), 
+  requireAdmin,
   deleteCourse
 )
 

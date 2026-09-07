@@ -202,6 +202,36 @@ async function main() {
     }
   }
 
+  const familiesData = [
+    { id: 1, name: 'Oficios' },
+    { id: 2, name: 'Tecnología' },
+    { id: 3, name: 'Emprendimiento' },
+    { id: 4, name: 'Servicios' },
+    { id: 5, name: 'Administración' },
+  ]
+
+  const familyByName = {}
+  for (const family of familiesData) {
+    const record = await prisma.family.upsert({
+      where: { name: family.name },
+      update: {},
+      create: { name: family.name },
+    })
+    familyByName[family.name] = record.id
+    console.log(`✅ Familia: ${family.name}`)
+  }
+
+  const daysData = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
+  const dayMap = {}
+  for (const name of daysData) {
+    let day = await prisma.day.findFirst({ where: { name } })
+    if (!day) {
+      day = await prisma.day.create({ data: { name } })
+      console.log(`✅ Día creado: ${name}`)
+    }
+    dayMap[name] = day
+  }
+
   const attendanceCodesData = ['presente', 'tarde', 'media falta', 'ausente', 'justificado', 'feriado']
 
   for (const name of attendanceCodesData) {
@@ -229,23 +259,227 @@ async function main() {
     console.log(`✅ Instructor por defecto creado: ${defaultInstructor.firstName} ${defaultInstructor.lastName}`)
   }
 
-  const courseNames = ['Operador de PC', 'Programador Web', 'Electricista Matriculado', 'Diseño Gráfico Digital']
+  const COURSES_SEED = [
+    {
+      name: 'Operador de PC',
+      family: 'Tecnología',
+      isAnnual: false,
+      startDate: '2026-03-10',
+      endDate: '2026-07-02',
+      startTime: '18:00',
+      endTime: '21:00',
+      preEnrollmentDate: '2026-02-15',
+      days: ['Lunes', 'Miércoles'],
+      maxAbsences: 4,
+      statusId: STATUSES.ACTIVO,
+      description: 'Manejo de sistema operativo, ofimática, internet y herramientas digitales básicas para el entorno laboral.',
+      quota: 25,
+      hourQuantity: 120,
+      classesQuantity: 32,
+    },
+    {
+      name: 'Programador Web',
+      family: 'Tecnología',
+      isAnnual: false,
+      startDate: '2026-07-15',
+      endDate: '2026-12-10',
+      startTime: '18:00',
+      endTime: '21:00',
+      preEnrollmentDate: '2026-07-01',
+      days: ['Martes', 'Jueves'],
+      maxAbsences: 4,
+      statusId: STATUSES.ACTIVO,
+      description: 'Desarrollo de sitios y aplicaciones web con HTML, CSS, JavaScript y fundamentos de backend.',
+      quota: 22,
+      hourQuantity: 160,
+      classesQuantity: 36,
+    },
+    {
+      name: 'Electricista Matriculado',
+      family: 'Oficios',
+      isAnnual: true,
+      startDate: '2026-03-16',
+      endDate: '2026-12-14',
+      startTime: '17:30',
+      endTime: '20:45',
+      preEnrollmentDate: '2026-02-15',
+      days: ['Lunes', 'Miércoles', 'Viernes'],
+      maxAbsences: 5,
+      statusId: STATUSES.ACTIVO,
+      description: 'Instalaciones eléctricas domiciliarias y comerciales, tableros, puesta a tierra y normativa AEA.',
+      quota: 20,
+      hourQuantity: 250,
+      classesQuantity: 60,
+    },
+    {
+      name: 'Diseño Gráfico Digital',
+      family: 'Tecnología',
+      isAnnual: false,
+      startDate: '2026-07-15',
+      endDate: '2026-12-10',
+      startTime: '18:00',
+      endTime: '21:00',
+      preEnrollmentDate: '2026-07-01',
+      days: ['Lunes', 'Miércoles'],
+      maxAbsences: 4,
+      statusId: STATUSES.ACTIVO,
+      description: 'Herramientas de diseño visual, composición, tipografía y piezas para medios digitales e impresos.',
+      quota: 20,
+      hourQuantity: 120,
+      classesQuantity: 32,
+      sponsorName: 'TecPlata',
+    },
+    {
+      name: 'Impresión 3D',
+      family: 'Tecnología',
+      isAnnual: false,
+      startDate: '2026-07-20',
+      endDate: '2026-12-15',
+      startTime: '17:30',
+      endTime: '20:30',
+      preEnrollmentDate: '2026-07-05',
+      days: ['Martes', 'Jueves'],
+      maxAbsences: 4,
+      statusId: STATUSES.ACTIVO,
+      description: 'Fabricación aditiva, modelado CAD, laminado y post-procesamiento de piezas.',
+      quota: 20,
+      hourQuantity: 100,
+      classesQuantity: 28,
+      sponsorName: 'TecPlata',
+    },
+    {
+      name: 'Limpieza Institucional',
+      family: 'Servicios',
+      isAnnual: false,
+      startDate: '2026-07-10',
+      endDate: '2026-11-30',
+      startTime: '14:00',
+      endTime: '17:00',
+      preEnrollmentDate: '2026-06-25',
+      days: ['Lunes', 'Miércoles'],
+      maxAbsences: 3,
+      statusId: STATUSES.ACTIVO,
+      description: 'Protocolos de higiene, sanitización y manejo de productos químicos en instituciones.',
+      quota: 30,
+      hourQuantity: 90,
+      classesQuantity: 24,
+    },
+    {
+      name: 'Logística Portuaria',
+      family: 'Administración',
+      isAnnual: false,
+      startDate: '2026-03-05',
+      endDate: '2026-07-02',
+      startTime: '18:00',
+      endTime: '21:00',
+      preEnrollmentDate: '2026-02-10',
+      days: ['Lunes', 'Miércoles'],
+      maxAbsences: 4,
+      statusId: STATUSES.EGRESADO,
+      description: 'Operativa de comercio exterior, contenedores, aduana y cadena de suministro portuaria.',
+      quota: 30,
+      hourQuantity: 140,
+      classesQuantity: 36,
+      sponsorName: 'TecPlata',
+    },
+    {
+      name: 'Soldador',
+      family: 'Oficios',
+      isAnnual: true,
+      startDate: '2026-03-16',
+      endDate: '2026-12-14',
+      startTime: '17:30',
+      endTime: '20:45',
+      preEnrollmentDate: '2026-02-15',
+      days: ['Lunes', 'Miércoles', 'Viernes'],
+      maxAbsences: 5,
+      statusId: STATUSES.ACTIVO,
+      description: 'Soldadura eléctrica por arco, oxicorte y preparación de superficies en aceros de bajo carbono.',
+      quota: 25,
+      hourQuantity: 250,
+      classesQuantity: 60,
+      sponsorName: 'UOCRA',
+    },
+    {
+      name: 'Operador de Marketing Digital',
+      family: 'Emprendimiento',
+      isAnnual: false,
+      startDate: '2026-07-18',
+      endDate: '2026-12-05',
+      startTime: '18:00',
+      endTime: '21:00',
+      preEnrollmentDate: '2026-07-03',
+      days: ['Martes', 'Jueves'],
+      maxAbsences: 4,
+      statusId: STATUSES.ACTIVO,
+      description: 'Campañas digitales, redes sociales, métricas y estrategias de comercialización para pymes.',
+      quota: 24,
+      hourQuantity: 110,
+      classesQuantity: 28,
+    },
+  ]
 
   const courseMap = {}
-  for (const name of courseNames) {
-    let course = await prisma.course.findFirst({ where: { name } })
-    if (!course) {
-      course = await prisma.course.create({
-        data: {
-          name,
-          statusId: STATUSES.ACTIVO,
-          instructorId: defaultInstructor.id,
-          maxAbsences: 5,
-        },
-      })
-      console.log(`✅ Curso creado: ${name}`)
+  for (const item of COURSES_SEED) {
+    let course = await prisma.course.findFirst({ where: { name: item.name } })
+    const courseData = {
+      name: item.name,
+      statusId: item.statusId,
+      instructorId: defaultInstructor.id,
+      familyId: familyByName[item.family],
+      maxAbsences: item.maxAbsences,
+      isAnnual: item.isAnnual,
+      startDate: new Date(item.startDate),
+      endDate: new Date(item.endDate),
+      startTime: item.startTime,
+      endTime: item.endTime,
+      preEnrollmentDate: new Date(item.preEnrollmentDate),
     }
-    courseMap[name] = course
+
+    if (!course) {
+      course = await prisma.course.create({ data: courseData })
+      console.log(`✅ Curso creado: ${item.name}`)
+    } else {
+      course = await prisma.course.update({
+        where: { id: course.id },
+        data: courseData,
+      })
+      console.log(`ℹ️ Curso actualizado: ${item.name}`)
+    }
+
+    await prisma.courseDetail.upsert({
+      where: { courseId: course.id },
+      update: {
+        description: item.description,
+        quota: item.quota,
+        hourQuantity: item.hourQuantity,
+        classesQuantity: item.classesQuantity,
+        titleRequired: false,
+        endorsementBy: 'Ministerio de Educación y Trabajo de la Provincia de Buenos Aires',
+        sponsorName: item.sponsorName || null,
+      },
+      create: {
+        courseId: course.id,
+        description: item.description,
+        quota: item.quota,
+        hourQuantity: item.hourQuantity,
+        classesQuantity: item.classesQuantity,
+        titleRequired: false,
+        endorsementBy: 'Ministerio de Educación y Trabajo de la Provincia de Buenos Aires',
+        sponsorName: item.sponsorName || null,
+      },
+    })
+
+    await prisma.courseDay.deleteMany({ where: { courseId: course.id } })
+    for (const dayName of item.days) {
+      const day = dayMap[dayName]
+      if (!day) continue
+      await prisma.courseDay.create({
+        data: { courseId: course.id, dayId: day.id },
+      })
+    }
+
+    courseMap[item.name] = course
   }
 
   for (const s of MOCK_STUDENTS_SEED) {

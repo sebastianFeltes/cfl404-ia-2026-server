@@ -6,3 +6,9 @@ node_modules
 client_secret*.json
 
 /generated/prisma
+
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+

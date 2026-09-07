@@ -25,7 +25,7 @@ export const savePaymentSchema = z.object({
     })
     .min(2000, 'El pago mínimo de cooperadora debe ser de $2.000'),
   date: z.string().optional().nullable(),
-  notes: z.string().optional().nullable().default(''),
+  notes: z.string().max(500).optional().nullable().default(''),
 })
 
 /**
@@ -47,6 +47,7 @@ export const createBuffetSchema = z.object({
       required_error: 'El detalle o concepto es obligatorio',
     })
     .min(2, 'El detalle debe contener al menos 2 caracteres')
+    .max(500)
     .trim(),
-  observaciones: z.string().optional().nullable().default(''),
+  observaciones: z.string().max(500).optional().nullable().default(''),
 })

@@ -31,7 +31,9 @@ export const createStaffSchema = z.object({
     role_id: z
         .number()
         .int('El rol debe ser un número entero')
-        .positive('El rol debe ser un número positivo')
+        .refine((val) => [1, 2, 3, 4, 5, 6, 7].includes(val), {
+            message: 'El rol debe ser un rol de personal válido',
+        })
         .optional()
         .default(7),
     phone: z
@@ -48,12 +50,14 @@ export const createStaffSchema = z.object({
         .nullable(),
     profile_photo_url: z
         .string()
+        .max(2048, 'La URL de la foto no puede exceder 2048 caracteres')
         .url('La URL de la foto no es válida')
         .or(z.literal(''))
         .optional()
         .nullable(),
     assigned_course_ids: z
         .array(z.string())
+        .max(50, 'No se pueden asignar más de 50 cursos')
         .optional()
         .nullable(),
 })

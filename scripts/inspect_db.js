@@ -1,3 +1,4 @@
+/** CLI only — do not expose as HTTP. Contains PII from the local DB. */
 import prisma from '../src/lib/prisma.js';
 
 async function run() {

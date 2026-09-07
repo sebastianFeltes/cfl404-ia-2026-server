@@ -1,5 +1,7 @@
-// Archivo: src/controllers/alumnos.controllers.js
 import prisma from '../lib/prisma.js'
+import { parsePagination } from '../lib/pagination.js'
+import { assertAllowedPhotoUrl } from '../lib/photo-url.js'
+import { parseAcceptedTerms } from '../lib/accepted-terms.js'
 
 const STATUS_MAP = {
   1: 'Activo',
@@ -15,50 +17,48 @@ const STATUS_TO_ID = {
   Egresado: 4,
 }
 
+const VALID_STATUS_IDS = new Set([1, 2, 3, 4])
 const STUDENT_ROLE_NAMES = ['ALUMNO', 'POSTULANTE']
+const STAFF_ROLE_IDS = new Set([1, 2, 3, 4, 5, 6, 7])
+const STATUS_INACTIVO = 2
 
-/**
- * Helper para obtener o crear un curso por nombre
- */
-async function getOrCreateCourse(courseName) {
-  if (!courseName) return null
+async function resolveExistingCourse(courseName) {
+  if (!courseName || !String(courseName).trim()) return null
 
-  let course = await prisma.course.findFirst({
-    where: { name: courseName },
-  })
+  const value = String(courseName).trim()
+  const byId = await prisma.course.findUnique({ where: { id: value } }).catch(() => null)
+  if (byId) return byId
 
-  if (!course) {
-    let defaultInstructor = await prisma.user.findFirst({
-      where: { role: { name: 'INSTRUCTOR' } },
-    })
-    if (!defaultInstructor) {
-      let instructorRole = await prisma.role.findFirst({ where: { name: 'INSTRUCTOR' } })
-      if (!instructorRole) {
-        instructorRole = await prisma.role.create({ data: { name: 'INSTRUCTOR' } })
-      }
-      defaultInstructor = await prisma.user.create({
-        data: {
-          firstName: 'Docente',
-          lastName: 'CFL 404',
-          email: 'docente@cfl404.edu.ar',
-          dni: '20000001',
-          statusId: 1,
-          roleId: instructorRole.id,
-        },
-      })
-    }
-
-    course = await prisma.course.create({
-      data: {
-        name: courseName,
-        statusId: 1,
-        instructorId: defaultInstructor.id,
-        maxAbsences: 5,
-      },
-    })
+  const byName = await prisma.course.findFirst({ where: { name: value } })
+  if (!byName) {
+    const error = new Error('El curso indicado no existe')
+    error.statusCode = 400
+    throw error
   }
+  return byName
+}
 
-  return course
+async function findStudentById(id) {
+  return prisma.user.findFirst({
+    where: { id, role: { name: { in: STUDENT_ROLE_NAMES } } },
+    include: studentInclude,
+  })
+}
+
+function resolveStudentRoleName(roleName) {
+  if (!roleName) return 'ALUMNO'
+  const normalized = String(roleName).trim().toUpperCase()
+  if (['POSTULANTE', 'ASPIRANTE', 'POSTULANTE'].includes(normalized) || normalized === 'POSTULANTE') {
+    return 'POSTULANTE'
+  }
+  if (normalized === 'ALUMNO' || normalized === 'ESTUDIANTE' || normalized === 'ALUMNO') {
+    return 'ALUMNO'
+  }
+  if (roleName === 'Aspirante' || roleName === 'Postulante') return 'POSTULANTE'
+  if (roleName === 'Alumno') return 'ALUMNO'
+  const error = new Error('El rol del alumno solo puede ser ALUMNO o POSTULANTE')
+  error.statusCode = 400
+  throw error
 }
 
 const studentInclude = {
@@ -72,61 +72,68 @@ const studentInclude = {
   status: true,
 }
 
-/**
- * Obtener listado completo de alumnos con sus cursos y detalles
- */
+function formatStudent(s) {
+  const activeCourse = s.userCourses?.[0]?.course?.name || 'Sin curso asignado'
+  const statusText = STATUS_MAP[s.statusId] || s.status?.name || 'Activo'
+  const isAspirante = s.statusId === 3 || s.role?.name === 'POSTULANTE'
+
+  return {
+    id: s.id,
+    first_name: s.firstName,
+    last_name: s.lastName,
+    dni: s.dni,
+    email: s.email,
+    phone: s.userDetail?.phone || '',
+    extra_phone: s.userDetail?.extraPhone || '',
+    extra_email: s.userDetail?.extraEmail || '',
+    address: s.userDetail?.address || '',
+    dob: s.userDetail?.dob ? new Date(s.userDetail.dob).toLocaleDateString('es-AR') : '',
+    gender: s.userDetail?.gender || '',
+    nacionality: s.userDetail?.nacionality || 'Argentina',
+    academic_level: s.userDetail?.academicLevel || 'Secundario',
+    course_name: activeCourse,
+    course: activeCourse,
+    enrollment_date: new Date(s.createdAt).toLocaleDateString('es-AR'),
+    status_id: s.statusId,
+    status: statusText,
+    is_present: s.statusId === 1,
+    is_aspirante: isAspirante,
+    role_name: s.role?.name || (isAspirante ? 'POSTULANTE' : 'ALUMNO'),
+    profile_photo_url: s.profilePhotoUrl,
+    accepted_terms: Boolean(s.acceptedTerms),
+    acceptedTerms: Boolean(s.acceptedTerms),
+    dni_copy: true,
+    form_copy: true,
+    title_copy: true,
+    studentDetail: s.userDetail,
+    studentCourses: s.userCourses,
+    createdAt: s.createdAt,
+  }
+}
+
 export const getAlumnos = async (req, res, next) => {
   try {
-    const students = await prisma.user.findMany({
-      where: { role: { name: { in: STUDENT_ROLE_NAMES } } },
-      include: studentInclude,
-      orderBy: {
-        createdAt: 'desc',
-      },
-    })
+    const { take, skip, page } = parsePagination(req.query)
 
-    const formattedStudents = students.map((s) => {
-      const activeCourse = s.userCourses?.[0]?.course?.name || 'Sin curso asignado'
-      const statusText = STATUS_MAP[s.statusId] || s.status?.name || 'Activo'
-      const isAspirante = s.statusId === 3 || s.role?.name === 'POSTULANTE'
+    const where = { role: { name: { in: STUDENT_ROLE_NAMES } } }
+    const [students, total] = await Promise.all([
+      prisma.user.findMany({
+        where,
+        include: studentInclude,
+        orderBy: { createdAt: 'desc' },
+        take,
+        skip,
+      }),
+      prisma.user.count({ where }),
+    ])
 
-      return {
-        id: s.id,
-        first_name: s.firstName,
-        last_name: s.lastName,
-        dni: s.dni,
-        email: s.email,
-        phone: s.userDetail?.phone || '',
-        extra_phone: s.userDetail?.extraPhone || '',
-        extra_email: s.userDetail?.extraEmail || '',
-        address: s.userDetail?.address || '',
-        dob: s.userDetail?.dob ? new Date(s.userDetail.dob).toLocaleDateString('es-AR') : '',
-        gender: s.userDetail?.gender || '',
-        nacionality: s.userDetail?.nacionality || 'Argentina',
-        academic_level: s.userDetail?.academicLevel || 'Secundario',
-        course_name: activeCourse,
-        course: activeCourse,
-        enrollment_date: new Date(s.createdAt).toLocaleDateString('es-AR'),
-        status_id: s.statusId,
-        status: statusText,
-        is_present: s.statusId === 1,
-        is_aspirante: isAspirante,
-        role_name: s.role?.name || (isAspirante ? 'POSTULANTE' : 'ALUMNO'),
-        profile_photo_url: s.profilePhotoUrl,
-        accepted_terms: Boolean(s.acceptedTerms),
-        acceptedTerms: Boolean(s.acceptedTerms),
-        dni_copy: true,
-        form_copy: true,
-        title_copy: true,
-        studentDetail: s.userDetail,
-        studentCourses: s.userCourses,
-        createdAt: s.createdAt,
-      }
-    })
+    const formattedStudents = students.map(formatStudent)
 
     return res.status(200).json({
       status: 'success',
       count: formattedStudents.length,
+      total,
+      page,
       data: formattedStudents,
     })
   } catch (error) {
@@ -134,17 +141,10 @@ export const getAlumnos = async (req, res, next) => {
   }
 }
 
-/**
- * Obtener detalle de un alumno por ID
- */
 export const getAlumnoById = async (req, res, next) => {
   try {
     const { id } = req.params
-
-    const student = await prisma.user.findUnique({
-      where: { id },
-      include: studentInclude,
-    })
+    const student = await findStudentById(id)
 
     if (!student) {
       return res.status(404).json({
@@ -152,55 +152,15 @@ export const getAlumnoById = async (req, res, next) => {
       })
     }
 
-    const activeCourse = student.userCourses?.[0]?.course?.name || 'Sin curso asignado'
-    const statusText = STATUS_MAP[student.statusId] || student.status?.name || 'Activo'
-    const isAspirante = student.statusId === 3 || student.role?.name === 'POSTULANTE'
-
-    const formattedStudent = {
-      id: student.id,
-      first_name: student.firstName,
-      last_name: student.lastName,
-      dni: student.dni,
-      email: student.email,
-      phone: student.userDetail?.phone || '',
-      extra_phone: student.userDetail?.extraPhone || '',
-      extra_email: student.userDetail?.extraEmail || '',
-      address: student.userDetail?.address || '',
-      dob: student.userDetail?.dob ? new Date(student.userDetail.dob).toLocaleDateString('es-AR') : '',
-      gender: student.userDetail?.gender || '',
-      nacionality: student.userDetail?.nacionality || 'Argentina',
-      academic_level: student.userDetail?.academicLevel || 'Secundario',
-      course_name: activeCourse,
-      course: activeCourse,
-      enrollment_date: new Date(student.createdAt).toLocaleDateString('es-AR'),
-      status_id: student.statusId,
-      status: statusText,
-      is_present: student.statusId === 1,
-      is_aspirante: isAspirante,
-      role_name: student.role?.name || 'ALUMNO',
-      profile_photo_url: student.profilePhotoUrl,
-      accepted_terms: Boolean(student.acceptedTerms),
-      acceptedTerms: Boolean(student.acceptedTerms),
-      dni_copy: true,
-      form_copy: true,
-      title_copy: true,
-      studentDetail: student.userDetail,
-      studentCourses: student.userCourses,
-      createdAt: student.createdAt,
-    }
-
     return res.status(200).json({
       status: 'success',
-      data: formattedStudent,
+      data: formatStudent(student),
     })
   } catch (error) {
     next(error)
   }
 }
 
-/**
- * Crear un nuevo alumno en la base de datos
- */
 export const createAlumno = async (req, res, next) => {
   try {
     const {
@@ -221,9 +181,17 @@ export const createAlumno = async (req, res, next) => {
       acceptedTerms,
     } = req.body
 
-    const rawAcceptedTerms = accepted_terms ?? acceptedTerms
+    if (req.body.role_id !== undefined) {
+      return res.status(400).json({ error: 'No se admite role_id en alumnos' })
+    }
 
-    // 1. Verificar unicidad de DNI y Email
+    if (status_id !== undefined && !VALID_STATUS_IDS.has(status_id)) {
+      return res.status(400).json({ error: 'status_id inválido' })
+    }
+
+    assertAllowedPhotoUrl(profile_photo_url)
+    const parsedTerms = parseAcceptedTerms(accepted_terms ?? acceptedTerms)
+
     const existingStudent = await prisma.user.findFirst({
       where: {
         OR: [{ dni }, { email }],
@@ -237,17 +205,13 @@ export const createAlumno = async (req, res, next) => {
       })
     }
 
-    // 2. Obtener o crear rol
-    const isPostulant = role_name === 'Aspirante' || role_name === 'POSTULANTE'
-    const targetRoleName = isPostulant ? 'POSTULANTE' : 'ALUMNO'
-    let alumnoRole = await prisma.role.findFirst({
+    const targetRoleName = resolveStudentRoleName(role_name)
+    const alumnoRole = await prisma.role.findFirst({
       where: { name: targetRoleName },
     })
 
     if (!alumnoRole) {
-      alumnoRole = await prisma.role.create({
-        data: { name: targetRoleName },
-      })
+      return res.status(500).json({ error: 'Rol de alumno no configurado en el sistema' })
     }
 
     let finalStatusId = 1
@@ -255,11 +219,10 @@ export const createAlumno = async (req, res, next) => {
       finalStatusId = status_id
     } else if (status) {
       finalStatusId = STATUS_TO_ID[status] || 1
-    } else if (role_name === 'Aspirante' || role_name === 'POSTULANTE') {
+    } else if (targetRoleName === 'POSTULANTE') {
       finalStatusId = 3
     }
 
-    // 3. Crear estudiante y su detalle
     const newStudent = await prisma.user.create({
       data: {
         firstName: first_name,
@@ -269,7 +232,7 @@ export const createAlumno = async (req, res, next) => {
         statusId: finalStatusId,
         roleId: alumnoRole.id,
         profilePhotoUrl: profile_photo_url || null,
-        acceptedTerms: Boolean(rawAcceptedTerms ?? false),
+        acceptedTerms: parsedTerms === true,
         userDetail: {
           create: {
             phone: phone || null,
@@ -287,10 +250,9 @@ export const createAlumno = async (req, res, next) => {
       },
     })
 
-    // 4. Vincular con el curso
     const selectedCourseName = course_name || course
     if (selectedCourseName) {
-      const targetCourse = await getOrCreateCourse(selectedCourseName)
+      const targetCourse = await resolveExistingCourse(selectedCourseName)
       if (targetCourse) {
         await prisma.userCourse.create({
           data: {
@@ -337,9 +299,6 @@ export const createAlumno = async (req, res, next) => {
   }
 }
 
-/**
- * Actualizar datos de un alumno (incluyendo curso)
- */
 export const updateAlumno = async (req, res, next) => {
   try {
     const { id } = req.params
@@ -361,8 +320,20 @@ export const updateAlumno = async (req, res, next) => {
       acceptedTerms,
     } = req.body
 
-    const studentExists = await prisma.user.findUnique({
-      where: { id },
+    if (req.body.role_id !== undefined) {
+      return res.status(400).json({ error: 'No se admite role_id en alumnos' })
+    }
+
+    if (status_id !== undefined && !VALID_STATUS_IDS.has(status_id)) {
+      return res.status(400).json({ error: 'status_id inválido' })
+    }
+
+    if (profile_photo_url !== undefined) {
+      assertAllowedPhotoUrl(profile_photo_url)
+    }
+
+    const studentExists = await prisma.user.findFirst({
+      where: { id, role: { name: { in: STUDENT_ROLE_NAMES } } },
     })
 
     if (!studentExists) {
@@ -378,22 +349,19 @@ export const updateAlumno = async (req, res, next) => {
       finalStatusId = STATUS_TO_ID[status]
     }
 
-    const rawAcceptedTerms = accepted_terms ?? acceptedTerms
+    const parsedTerms = parseAcceptedTerms(accepted_terms ?? acceptedTerms)
 
     let targetRoleId = undefined
-    if (req.body.role_id !== undefined) {
-      targetRoleId = req.body.role_id
-    } else if (role_name) {
-      const isPostulant = role_name.toUpperCase() === 'POSTULANTE' || role_name.toUpperCase() === 'ASPIRANTE'
+    if (role_name) {
+      const targetRoleName = resolveStudentRoleName(role_name)
       const roleRecord = await prisma.role.findFirst({
-        where: { name: isPostulant ? 'POSTULANTE' : 'ALUMNO' },
+        where: { name: targetRoleName },
       })
       if (roleRecord) {
         targetRoleId = roleRecord.id
       }
     }
 
-    // 1. Actualizar datos base del alumno
     const updatedStudent = await prisma.user.update({
       where: { id },
       data: {
@@ -404,7 +372,7 @@ export const updateAlumno = async (req, res, next) => {
         ...(finalStatusId !== undefined && { statusId: finalStatusId }),
         ...(targetRoleId !== undefined && { roleId: targetRoleId }),
         ...(profile_photo_url !== undefined && { profilePhotoUrl: profile_photo_url }),
-        ...(rawAcceptedTerms !== undefined && { acceptedTerms: Boolean(rawAcceptedTerms) }),
+        ...(parsedTerms !== undefined && { acceptedTerms: parsedTerms }),
         userDetail: {
           upsert: {
             create: {
@@ -428,10 +396,9 @@ export const updateAlumno = async (req, res, next) => {
       },
     })
 
-    // 2. Actualizar vínculo de Curso
     const selectedCourseName = course_name || course
-    if (selectedCourseName !== undefined) {
-      const targetCourse = await getOrCreateCourse(selectedCourseName)
+    if (selectedCourseName !== undefined && selectedCourseName !== null && selectedCourseName !== '') {
+      const targetCourse = await resolveExistingCourse(selectedCourseName)
       if (targetCourse) {
         await prisma.userCourse.deleteMany({
           where: { userId: id },
@@ -471,15 +438,12 @@ export const updateAlumno = async (req, res, next) => {
   }
 }
 
-/**
- * Eliminar un alumno
- */
 export const deleteAlumno = async (req, res, next) => {
   try {
     const { id } = req.params
 
-    const studentExists = await prisma.user.findUnique({
-      where: { id },
+    const studentExists = await prisma.user.findFirst({
+      where: { id, role: { name: { in: STUDENT_ROLE_NAMES } } },
     })
 
     if (!studentExists) {
@@ -488,21 +452,20 @@ export const deleteAlumno = async (req, res, next) => {
       })
     }
 
-    await prisma.userCourse.deleteMany({
-      where: { userId: id },
-    })
+    if (STAFF_ROLE_IDS.has(studentExists.roleId)) {
+      return res.status(404).json({
+        error: 'Alumno no encontrado para eliminar',
+      })
+    }
 
-    await prisma.userDetail.deleteMany({
-      where: { userId: id },
-    })
-
-    await prisma.user.delete({
+    await prisma.user.update({
       where: { id },
+      data: { statusId: STATUS_INACTIVO },
     })
 
     return res.status(200).json({
       status: 'success',
-      message: `Alumno ${id} eliminado exitosamente de la base de datos`,
+      message: `Alumno ${id} desactivado exitosamente`,
     })
   } catch (error) {
     next(error)

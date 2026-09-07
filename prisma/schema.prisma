@@ -34,6 +34,7 @@ model User {
   userCourses       UserCourse[]
   instructedCourses Course[]             @relation("CourseInstructor")
   cooperadoraPayments CooperadoraPayment[]
+  refreshTokens     RefreshToken[]
 
   @@map("users")
 }
@@ -60,6 +61,16 @@ model UserDetail {
   @@map("user_detail")
 }
 
+model Family {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  courses   Course[]
+
+  @@map("family")
+}
+
 model Course {
   id                String            @id @default(uuid())
   name              String
@@ -71,12 +82,14 @@ model Course {
   isAnnual          Boolean           @default(false) @map("is_annual")
   statusId          Int               @map("status_id")
   instructorId      String            @map("instructor_id")
+  familyId          Int?              @map("family_id")
   maxAbsences       Int               @map("max_absences")
   createdAt         DateTime          @default(now()) @map("created_at")
   updatedAt         DateTime          @updatedAt @map("updated_at")
 
   status           Status            @relation(fields: [statusId], references: [id])
   instructor       User              @relation("CourseInstructor", fields: [instructorId], references: [id])
+  family           Family?           @relation(fields: [familyId], references: [id])
   courseDetail     CourseDetail?
   userCourses      UserCourse[]
   classroomCourses ClassroomCourse[]
@@ -246,4 +259,18 @@ model BuffetMovement {
   updatedAt    DateTime @updatedAt @map("updated_at")
 
   @@map("buffet_movement")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_token")
 }

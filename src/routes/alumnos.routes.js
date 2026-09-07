@@ -1,7 +1,7 @@
-// Archivo: src/routes/alumnos.routes.js
 import { Router } from 'express'
 import { validateSchema } from '../middlewares/validateSchema.js'
 import { createAlumnoSchema, updateAlumnoSchema } from '../schemas/alumnos.schema.js'
+import { authenticateToken, requireAdmin, requireStaff, requireSelfOrStaff } from '../middlewares/auth.middlewares.js'
 import {
   getAlumnos,
   getAlumnoById,
@@ -12,24 +12,13 @@ import {
 
 const router = Router()
 
-/**
- * Rutas de Gestión de Alumnos
- * Flujo: Endpoint -> Middleware Zod (en POST/PUT) -> Controlador
- */
+const ALUMNOS_READ = [authenticateToken, requireStaff]
+const ALUMNOS_WRITE = [authenticateToken, requireAdmin]
 
-// GET /api/alumnos - Listado de alumnos
-router.get('/alumnos', getAlumnos)
-
-// GET /api/alumnos/:id - Detalle de un alumno
-router.get('/alumnos/:id', getAlumnoById)
-
-// POST /api/alumnos - Crear nuevo alumno (Valida cuerpo con Zod)
-router.post('/alumnos', validateSchema(createAlumnoSchema), createAlumno)
-
-// PUT /api/alumnos/:id - Actualizar datos de un alumno (Valida cuerpo con Zod)
-router.put('/alumnos/:id', validateSchema(updateAlumnoSchema), updateAlumno)
-
-// DELETE /api/alumnos/:id - Eliminar alumno
-router.delete('/alumnos/:id', deleteAlumno)
+router.get('/alumnos', ...ALUMNOS_READ, getAlumnos)
+router.get('/alumnos/:id', ...ALUMNOS_READ, requireSelfOrStaff('id'), getAlumnoById)
+router.post('/alumnos', ...ALUMNOS_WRITE, validateSchema(createAlumnoSchema), createAlumno)
+router.put('/alumnos/:id', ...ALUMNOS_WRITE, validateSchema(updateAlumnoSchema), updateAlumno)
+router.delete('/alumnos/:id', ...ALUMNOS_WRITE, deleteAlumno)
 
 export default router

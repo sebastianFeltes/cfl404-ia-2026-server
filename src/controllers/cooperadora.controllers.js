@@ -1,4 +1,5 @@
 import prisma from '../lib/prisma.js'
+import { parsePagination } from '../lib/pagination.js'
 
 /**
  * Obtener todos los pagos de Cooperadora (opcionalmente filtrados por año o alumno)
@@ -16,6 +17,7 @@ export const getPayments = async (req, res, next) => {
       whereClause.userId = studentId
     }
 
+    const { take } = parsePagination(req.query, { defaultTake: 100, maxTake: 200 })
     const payments = await prisma.cooperadoraPayment.findMany({
       where: whereClause,
       include: {
@@ -30,6 +32,7 @@ export const getPayments = async (req, res, next) => {
         },
       },
       orderBy: [{ month: 'asc' }, { createdAt: 'desc' }],
+      take,
     })
 
     // Construir mapa de pagos por alumno para facilitar el renderizado en tablas
@@ -229,7 +232,7 @@ export const deletePayment = async (req, res, next) => {
  */
 export const getBuffetMovements = async (req, res, next) => {
   try {
-    const { tipo, year } = req.query
+    const { tipo, year, month } = req.query
 
     const whereClause = {}
     if (tipo) {
@@ -237,17 +240,34 @@ export const getBuffetMovements = async (req, res, next) => {
     }
     if (year) {
       const parsedYear = parseInt(year, 10)
-      const startDate = new Date(`${parsedYear}-01-01T00:00:00.000Z`)
-      const endDate = new Date(`${parsedYear}-12-31T23:59:59.999Z`)
-      whereClause.date = {
-        gte: startDate,
-        lte: endDate,
+      const parsedMonth = month ? parseInt(month, 10) : null
+
+      if (parsedMonth && parsedMonth >= 1 && parsedMonth <= 12) {
+        const monthStr = String(parsedMonth).padStart(2, '0')
+        const startDate = new Date(`${parsedYear}-${monthStr}-01T00:00:00.000Z`)
+        const endMonth = parsedMonth === 12 ? 1 : parsedMonth + 1
+        const endYear = parsedMonth === 12 ? parsedYear + 1 : parsedYear
+        const endMonthStr = String(endMonth).padStart(2, '0')
+        const endDate = new Date(`${endYear}-${endMonthStr}-01T00:00:00.000Z`)
+        whereClause.date = {
+          gte: startDate,
+          lt: endDate,
+        }
+      } else {
+        const startDate = new Date(`${parsedYear}-01-01T00:00:00.000Z`)
+        const endDate = new Date(`${parsedYear}-12-31T23:59:59.999Z`)
+        whereClause.date = {
+          gte: startDate,
+          lte: endDate,
+        }
       }
     }
 
+    const { take } = parsePagination(req.query, { defaultTake: 100, maxTake: 200 })
     const records = await prisma.buffetMovement.findMany({
       where: whereClause,
       orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+      take,
     })
 
     const formattedRecords = records.map((r) => ({

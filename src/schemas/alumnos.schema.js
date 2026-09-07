@@ -88,13 +88,15 @@ export const createAlumnoSchema = z
       .enum(['Activo', 'Inactivo', 'Pendiente', 'Egresado'])
       .optional()
       .default('Activo'),
-    status_id: z.number().optional(),
-    role_name: z.string().optional(),
-    profile_photo_url: z.string().optional().nullable(),
+    status_id: z.number().int().refine((id) => [1, 2, 3, 4].includes(id), {
+      message: 'El estado debe ser 1, 2, 3 o 4',
+    }).optional(),
+    role_name: z.enum(['ALUMNO', 'POSTULANTE', 'Alumno', 'Postulante', 'Aspirante', 'ASPIRANTE']).optional(),
+    profile_photo_url: z.string().max(2048).optional().nullable(),
     accepted_terms: z.boolean().optional(),
     acceptedTerms: z.boolean().optional(),
   })
-  // Regla de seguridad: el teléfono principal y el teléfono de emergencia deben ser diferentes
+  .strict()
   .refine(
     (data) => {
       if (!data.phone || !data.extra_phone) return true
@@ -141,12 +143,15 @@ export const updateAlumnoSchema = z
     gender: z.string().optional().nullable(),
     nacionality: z.string().optional().nullable(),
     status: z.enum(['Activo', 'Inactivo', 'Pendiente', 'Egresado']).optional(),
-    status_id: z.number().optional(),
-    role_name: z.string().optional(),
-    profile_photo_url: z.string().optional().nullable(),
+    status_id: z.number().int().refine((id) => [1, 2, 3, 4].includes(id), {
+      message: 'El estado debe ser 1, 2, 3 o 4',
+    }).optional(),
+    role_name: z.enum(['ALUMNO', 'POSTULANTE', 'Alumno', 'Postulante', 'Aspirante', 'ASPIRANTE']).optional(),
+    profile_photo_url: z.string().max(2048).optional().nullable(),
     accepted_terms: z.boolean().optional(),
     acceptedTerms: z.boolean().optional(),
   })
+  .strict()
   .refine(
     (data) => {
       if (!data.phone || !data.extra_phone) return true

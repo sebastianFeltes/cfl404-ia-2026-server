@@ -56,6 +56,13 @@ export const getQueueStatus = async (req, res) => {
 
 export const handleQueueWebhook = async (req, res) => {
   try {
+    const expected = process.env.QUEUE_WEBHOOK_SECRET
+    const provided = req.get('x-queue-webhook-secret')
+
+    if (!expected || provided !== expected) {
+      return res.status(401).json({ error: 'Webhook no autorizado' })
+    }
+
     const { event, ticketId, status } = req.body;
 
     console.log(`[QUEUE WEBHOOK] Evento recibido: ${event} para Ticket: ${ticketId}`);

@@ -1,15 +1,24 @@
-import jwt from 'jsonwebtoken'
 import { OAuth2Client } from 'google-auth-library'
 import prisma from '../lib/prisma.js'
+import { parseAcceptedTerms } from '../lib/accepted-terms.js'
+import { assertAllowedPhotoUrl } from '../lib/photo-url.js'
+import { DEV_LOGIN_ACCOUNTS, isDevLoginEnabled } from '../lib/dev-login.js'
+import {
+    ACCESS_COOKIE,
+    REFRESH_COOKIE,
+    REFRESH_TOKEN_DAYS,
+    cookieBaseOptions,
+    generateRefreshTokenValue,
+    hashRefreshToken,
+    refreshExpiryDate,
+    signAccessToken,
+} from '../lib/auth-tokens.js'
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || ''
-const IS_PRODUCTION = process.env.NODE_ENV === 'production'
-const ALLOW_AUTO_REGISTER = process.env.ALLOW_GOOGLE_AUTO_REGISTER !== 'false'
-const ALLOW_DEV_LOGIN = process.env.ALLOW_DEV_LOGIN === 'true' && !IS_PRODUCTION
+const ALLOW_AUTO_REGISTER = process.env.ALLOW_GOOGLE_AUTO_REGISTER === 'true'
 
 const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID)
 
-// Debe coincidir con los ids sembrados en prisma/seed.js
 const ROLES = {
     GOD: 1,
     ADMIN: 2,
@@ -29,28 +38,58 @@ const userInclude = { role: true, status: true, userDetail: true }
 
 const typeFromRole = (roleName) => (STUDENT_ROLES.has(roleName) ? 'STUDENT' : 'STAFF')
 
-/**
- * Firma el JWT de sesión propio de la plataforma.
- * Google solo autentica: la autorización (rol) sale siempre de nuestra base.
- */
-const generateAuthToken = (user, type) =>
-    jwt.sign(
-        {
-            id: user.id,
-            email: user.email,
-            dni: user.dni,
-            role: user.role.name,
-            roleId: user.roleId,
-            type, // 'STUDENT' o 'STAFF'
-        },
-        process.env.SECRET_KEY,
-        { expiresIn: '7d' },
-    )
+const generateAuthToken = (user, type) => signAccessToken(user, type)
 
-/**
- * Serializa el usuario con la misma forma en todos los endpoints de auth,
- * para que el cliente no tenga que interpretar respuestas distintas.
- */
+function accountMayLogin(user) {
+    const statusName = user.status?.name
+    const roleName = user.role?.name
+    if (statusName === 'ACTIVO') return true
+    return roleName === 'POSTULANTE' && statusName === 'PENDIENTE'
+}
+
+async function issueSession(res, user, type, { remember = true } = {}) {
+    const accessToken = signAccessToken(user, type)
+    const refreshRaw = generateRefreshTokenValue()
+    const tokenHash = hashRefreshToken(refreshRaw)
+    const expiresAt = refreshExpiryDate()
+
+    await prisma.refreshToken.create({
+        data: {
+            userId: user.id,
+            tokenHash,
+            expiresAt,
+        },
+    })
+
+    const base = cookieBaseOptions()
+    res.cookie(ACCESS_COOKIE, accessToken, {
+        ...base,
+        maxAge: 15 * 60 * 1000,
+    })
+    res.cookie(REFRESH_COOKIE, refreshRaw, {
+        ...base,
+        maxAge: remember ? REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000 : undefined,
+    })
+
+    return accessToken
+}
+
+async function revokeRefreshCookie(req) {
+    const raw = req.cookies?.[REFRESH_COOKIE]
+    if (!raw) return
+    const tokenHash = hashRefreshToken(raw)
+    await prisma.refreshToken.updateMany({
+        where: { tokenHash, revokedAt: null },
+        data: { revokedAt: new Date() },
+    })
+}
+
+function clearSessionCookies(res) {
+    const base = cookieBaseOptions()
+    res.clearCookie(ACCESS_COOKIE, base)
+    res.clearCookie(REFRESH_COOKIE, base)
+}
+
 const serializeUser = (user, type) => ({
     id: user.id,
     firstName: user.firstName,
@@ -70,11 +109,6 @@ const serializeUser = (user, type) => ({
     detail: user.userDetail,
 })
 
-/**
- * Busca al usuario en las dos tablas de personas (Student y Staff).
- * El googleId tiene prioridad sobre el email: es el identificador estable
- * de Google, mientras que el email de una cuenta puede cambiar.
- */
 const findUserByEmailOrGoogleId = async (email, googleId) => {
     const filters = [
         ...(googleId ? [{ googleId }] : []),
@@ -91,11 +125,6 @@ const findUserByEmailOrGoogleId = async (email, googleId) => {
     return { user, type: typeFromRole(user.role.name) }
 }
 
-/**
- * Extrae y valida los datos del ID token emitido por Google Identity Services.
- * La firma se verifica siempre contra las claves públicas de Google; si falta
- * GOOGLE_CLIENT_ID el login se rechaza en lugar de confiar en un token sin validar.
- */
 const verifyGoogleCredential = async (credential) => {
     if (!GOOGLE_CLIENT_ID) {
         throw Object.assign(
@@ -143,11 +172,8 @@ const verifyGoogleCredential = async (credential) => {
     }
 }
 
-/**
- * Sincroniza en la base los datos que devuelve Google en cada inicio de sesión:
- * vincula el googleId la primera vez, refresca la foto/locale y sella el último acceso.
- */
 const syncGoogleProfile = async (user, profile) => {
+    const acceptedTerms = parseAcceptedTerms(profile.acceptedTerms)
     return prisma.user.update({
         where: { id: user.id },
         data: {
@@ -156,16 +182,12 @@ const syncGoogleProfile = async (user, profile) => {
             profilePhotoUrl: profile.picture || user.profilePhotoUrl,
             locale: profile.locale || user.locale,
             lastLoginAt: new Date(),
-            ...(profile.acceptedTerms !== undefined && { acceptedTerms: Boolean(profile.acceptedTerms) }),
+            ...(acceptedTerms !== undefined && { acceptedTerms }),
         },
         include: userInclude,
     })
 }
 
-/**
- * Crea el alumno a partir del perfil de Google cuando la cuenta no existe todavía.
- * Queda en estado pendiente y sin DNI: administración completa el legajo después.
- */
 const registerStudentFromGoogle = async (profile) => {
     const student = await prisma.user.create({
         data: {
@@ -177,7 +199,7 @@ const registerStudentFromGoogle = async (profile) => {
             profilePhotoUrl: profile.picture,
             locale: profile.locale,
             lastLoginAt: new Date(),
-            acceptedTerms: Boolean(profile.acceptedTerms ?? false),
+            acceptedTerms: parseAcceptedTerms(profile.acceptedTerms) === true,
             statusId: STATUS_PENDIENTE,
             roleId: ROLES.POSTULANTE,
             userDetail: { create: {} },
@@ -188,11 +210,6 @@ const registerStudentFromGoogle = async (profile) => {
     return { user: student, type: 'STUDENT' }
 }
 
-/**
- * POST /api/auth/google
- * Recibe el ID token de Google Identity Services, lo verifica y devuelve
- * el JWT de sesión de la plataforma junto con el perfil del usuario.
- */
 export const loginWithGoogle = async (req, res, next) => {
     try {
         const { credential } = req.body || {}
@@ -211,7 +228,11 @@ export const loginWithGoogle = async (req, res, next) => {
             req.body?.terminosAceptados ??
             req.body?.declaracionJurada
         if (rawAcceptedTerms !== undefined) {
-            profile.acceptedTerms = Boolean(rawAcceptedTerms)
+            const parsed = parseAcceptedTerms(rawAcceptedTerms)
+            if (parsed === undefined) {
+                return res.status(400).json({ error: 'acceptedTerms debe ser un boolean' })
+            }
+            profile.acceptedTerms = parsed
         }
 
         let record = await findUserByEmailOrGoogleId(profile.email, profile.googleId)
@@ -223,6 +244,11 @@ export const loginWithGoogle = async (req, res, next) => {
                     error: 'Usuario no registrado en el sistema. Por favor, comunicate con la administración del CFL 404.',
                 })
             }
+            if (profile.acceptedTerms !== true) {
+                return res.status(400).json({
+                    error: 'Debés aceptar los términos y condiciones para registrarte',
+                })
+            }
             record = await registerStudentFromGoogle(profile)
             isNewAccount = true
         } else {
@@ -231,7 +257,11 @@ export const loginWithGoogle = async (req, res, next) => {
         }
 
         const { user, type } = record
-        const token = generateAuthToken(user, type)
+        if (!accountMayLogin(user)) {
+            return res.status(401).json({ error: 'Cuenta inactiva o no habilitada' })
+        }
+
+        const token = await issueSession(res, user, type, { remember: true })
 
         return res.json({
             message: isNewAccount
@@ -249,31 +279,18 @@ export const loginWithGoogle = async (req, res, next) => {
     }
 }
 
-/**
- * POST /api/auth/dev-login
- * Atajo de desarrollo para entrar con las cuentas de prueba del seed
- * sin pasar por Google. Deshabilitado si ALLOW_DEV_LOGIN no es true.
- */
 export const devLoginFallback = async (req, res, next) => {
     try {
-        if (!ALLOW_DEV_LOGIN) {
-            return res.status(403).json({ error: 'El acceso de desarrollo está deshabilitado' })
+        if (!isDevLoginEnabled()) {
+            return res.status(404).json({ error: 'Not found' })
         }
 
-        const { accountType = 'alumno', email } = req.body || {}
-
-        const demoAccounts = {
-            god: 'admin.test@cfl404.edu.ar',
-            dios: 'admin.test@cfl404.edu.ar',
-            alumno: 'alumno.test@cfl404.edu.ar',
-            estudiante: 'alumno.test@cfl404.edu.ar',
-            docente: 'docente.test@cfl404.edu.ar',
-            profesor: 'docente.test@cfl404.edu.ar',
-            admin: 'admin.test@cfl404.edu.ar',
-            directivo: 'directivo.test@cfl404.edu.ar',
+        const { accountType = 'alumno' } = req.body || {}
+        const key = String(accountType || '').toLowerCase()
+        const targetEmail = DEV_LOGIN_ACCOUNTS[key]
+        if (!targetEmail) {
+            return res.status(400).json({ error: 'Tipo de cuenta de desarrollo no válido' })
         }
-
-        const targetEmail = email || demoAccounts[accountType.toLowerCase()] || demoAccounts.alumno
 
         const record = await findUserByEmailOrGoogleId(targetEmail)
         if (!record) {
@@ -283,12 +300,67 @@ export const devLoginFallback = async (req, res, next) => {
         }
 
         const { user, type } = record
-        const token = generateAuthToken(user, type)
+        if (!accountMayLogin(user)) {
+            return res.status(401).json({ error: 'Cuenta inactiva o no habilitada' })
+        }
+
+        const token = await issueSession(res, user, type, { remember: true })
 
         return res.json({
             message: `Inicio de sesión de desarrollo (${user.role.name})`,
             token,
             user: serializeUser(user, type),
+        })
+    } catch (error) {
+        next(error)
+    }
+}
+
+export const logout = async (req, res, next) => {
+    try {
+        await revokeRefreshCookie(req)
+        clearSessionCookies(res)
+        return res.json({ message: 'Sesión cerrada' })
+    } catch (error) {
+        next(error)
+    }
+}
+
+export const refreshSession = async (req, res, next) => {
+    try {
+        const raw = req.cookies?.[REFRESH_COOKIE]
+        if (!raw) {
+            return res.status(401).json({ error: 'No hay sesión para renovar' })
+        }
+
+        const tokenHash = hashRefreshToken(raw)
+        const stored = await prisma.refreshToken.findUnique({
+            where: { tokenHash },
+            include: { user: { include: userInclude } },
+        })
+
+        if (!stored || stored.revokedAt || stored.expiresAt < new Date()) {
+            clearSessionCookies(res)
+            return res.status(401).json({ error: 'Sesión inválida o vencida' })
+        }
+
+        await prisma.refreshToken.update({
+            where: { id: stored.id },
+            data: { revokedAt: new Date() },
+        })
+
+        const user = stored.user
+        if (!accountMayLogin(user)) {
+            clearSessionCookies(res)
+            return res.status(401).json({ error: 'Cuenta inactiva o no habilitada' })
+        }
+
+        const type = typeFromRole(user.role.name)
+        const token = await issueSession(res, user, type, { remember: true })
+        return res.json({
+            message: 'Sesión renovada',
+            user: serializeUser(user, type),
+            token,
         })
     } catch (error) {
         next(error)
@@ -310,42 +382,39 @@ const dniBelongsToSomeoneElse = async (dni, excludeId) => {
     return Boolean(other)
 }
 
-/**
- * GET /api/auth/me
- * Devuelve el perfil vigente del usuario del JWT. El cliente lo usa al
- * arrancar para validar que el token guardado siga siendo válido.
- */
 export const getMyProfile = async (req, res, next) => {
     try {
-        const { id, type, email } = req.user
+        const { id } = req.user
 
-        const record = (await loadUserById(id)) || (await findUserByEmailOrGoogleId(email))
-        if (!record || record.user.id !== id) {
+        const record = await loadUserById(id)
+        if (!record) {
             return res.status(404).json({ error: 'Usuario no encontrado' })
         }
 
-        const token = generateAuthToken(record.user, record.type)
-
         return res.json({
             user: serializeUser(record.user, record.type),
-            token,
         })
     } catch (error) {
         next(error)
     }
 }
 
-/**
- * PATCH /api/auth/me
- * Persiste nombre, apellido, DNI y foto del usuario autenticado.
- * El correo lo administra Google: no se modifica desde este endpoint.
- */
+function rejectLockedIdentityChange(user, field, nextValue) {
+    const roleName = user.role?.name
+    if (roleName === 'POSTULANTE') return null
+    const current = user[field]
+    if (current && String(current).trim() && String(nextValue).trim() !== String(current).trim()) {
+        return `No se puede modificar ${field === 'dni' ? 'el DNI' : 'el nombre'} desde este perfil`
+    }
+    return null
+}
+
 export const updateMyProfile = async (req, res, next) => {
     try {
-        const { id, type, email } = req.user
-        const record = (await loadUserById(id)) || (await findUserByEmailOrGoogleId(email))
+        const { id } = req.user
+        const record = await loadUserById(id)
 
-        if (!record || record.user.id !== id) {
+        if (!record) {
             return res.status(404).json({ error: 'Usuario no encontrado' })
         }
 
@@ -361,6 +430,19 @@ export const updateMyProfile = async (req, res, next) => {
             body.acceptedConsent ??
             body.terminosAceptados ??
             body.declaracionJurada
+
+        if (firstName !== undefined) {
+            const locked = rejectLockedIdentityChange(record.user, 'firstName', firstName)
+            if (locked) return res.status(403).json({ error: locked })
+        }
+        if (lastName !== undefined) {
+            const locked = rejectLockedIdentityChange(record.user, 'lastName', lastName)
+            if (locked) return res.status(403).json({ error: locked })
+        }
+        if (rawDni !== undefined) {
+            const locked = rejectLockedIdentityChange(record.user, 'dni', rawDni)
+            if (locked) return res.status(403).json({ error: locked })
+        }
 
         const data = {}
 
@@ -394,14 +476,18 @@ export const updateMyProfile = async (req, res, next) => {
         }
 
         if (profilePhotoUrl !== undefined) {
+            assertAllowedPhotoUrl(profilePhotoUrl)
             data.profilePhotoUrl = profilePhotoUrl || null
         }
 
         if (rawAcceptedTerms !== undefined) {
-            data.acceptedTerms = Boolean(rawAcceptedTerms)
+            const parsed = parseAcceptedTerms(rawAcceptedTerms)
+            if (parsed === undefined) {
+                return res.status(400).json({ error: 'acceptedTerms debe ser un boolean' })
+            }
+            data.acceptedTerms = parsed
         }
 
-        // Datos complementarios del usuario (UserDetail)
         const phone = body.phone ?? body.telefono
         const address = body.address ?? body.direccion
         const academicLevel = body.academicLevel ?? body.academic_level ?? body.nivelAcademico
@@ -443,14 +529,14 @@ export const updateMyProfile = async (req, res, next) => {
         })
 
         const updatedType = typeFromRole(updated.role.name)
-        const token = generateAuthToken(updated, updatedType)
 
         return res.json({
             message: 'Perfil actualizado',
             user: serializeUser(updated, updatedType),
-            token,
         })
     } catch (error) {
         next(error)
     }
 }
+
+export { generateAuthToken }
