@@ -66,7 +66,21 @@ const studentInclude = {
   userDetail: true,
   userCourses: {
     include: {
-      course: true,
+      course: {
+        include: {
+          instructor: true,
+          classroomCourses: {
+            include: {
+              classroom: true,
+            },
+          },
+          courseDays: {
+            include: {
+              day: true,
+            },
+          },
+        },
+      },
     },
   },
   role: true,
@@ -74,9 +88,23 @@ const studentInclude = {
 }
 
 function formatStudent(s) {
-  const activeCourse = s.userCourses?.[0]?.course?.name || 'Sin curso asignado'
+  const primaryUserCourse = s.userCourses?.[0]
+  const courseObj = primaryUserCourse?.course
+  const activeCourse = courseObj?.name || 'Sin curso asignado'
   const statusText = STATUS_MAP[s.statusId] || s.status?.name || 'Activo'
   const isAspirante = s.statusId === 3 || s.role?.name === 'POSTULANTE'
+
+  const instructorName = courseObj?.instructor
+    ? `Prof. ${courseObj.instructor.firstName} ${courseObj.instructor.lastName}`.trim()
+    : null
+  const schedule = (courseObj?.startTime && courseObj?.endTime)
+    ? `${courseObj.startTime} a ${courseObj.endTime} hs`
+    : (courseObj?.startTime ? `${courseObj.startTime} hs` : null)
+  const classroomName = courseObj?.classroomCourses?.[0]?.classroom?.name 
+    ? (courseObj.classroomCourses[0].classroom.name.charAt(0).toUpperCase() + courseObj.classroomCourses[0].classroom.name.slice(1))
+    : null
+  const days = courseObj?.courseDays?.map(cd => cd.day?.name).filter(Boolean).join(', ') || null
+  const maxAbsences = courseObj?.maxAbsences ?? null
 
   return {
     id: s.id,
@@ -94,6 +122,11 @@ function formatStudent(s) {
     academic_level: s.userDetail?.academicLevel || 'Secundario',
     course_name: activeCourse,
     course: activeCourse,
+    instructor_name: instructorName,
+    course_schedule: schedule,
+    classroom_name: classroomName,
+    course_days: days,
+    max_absences: maxAbsences,
     enrollment_date: new Date(s.createdAt).toLocaleDateString('es-AR'),
     status_id: s.statusId,
     status: statusText,
