@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import prisma from '../lib/prisma.js'
 import { parsePagination } from '../lib/pagination.js'
 import { assertAllowedPhotoUrl } from '../lib/photo-url.js'
@@ -100,6 +101,7 @@ function formatStudent(s) {
     is_aspirante: isAspirante,
     role_name: s.role?.name || (isAspirante ? 'POSTULANTE' : 'ALUMNO'),
     profile_photo_url: s.profilePhotoUrl,
+    attendance_token: s.attendanceToken || (s.id ? `CFL404-ATT-${s.id}` : null),
     accepted_terms: Boolean(s.acceptedTerms),
     acceptedTerms: Boolean(s.acceptedTerms),
     dni_copy: true,
@@ -179,6 +181,7 @@ export const createAlumno = async (req, res, next) => {
       profile_photo_url,
       accepted_terms,
       acceptedTerms,
+      attendance_token,
     } = req.body
 
     if (req.body.role_id !== undefined) {
@@ -223,8 +226,12 @@ export const createAlumno = async (req, res, next) => {
       finalStatusId = 3
     }
 
+    const studentId = randomUUID()
+    const computedToken = attendance_token || `CFL404-ATT-${studentId}`
+
     const newStudent = await prisma.user.create({
       data: {
+        id: studentId,
         firstName: first_name,
         lastName: last_name,
         dni,
@@ -233,6 +240,7 @@ export const createAlumno = async (req, res, next) => {
         roleId: alumnoRole.id,
         profilePhotoUrl: profile_photo_url || null,
         acceptedTerms: parsedTerms === true,
+        attendanceToken: computedToken,
         userDetail: {
           create: {
             phone: phone || null,
@@ -286,6 +294,7 @@ export const createAlumno = async (req, res, next) => {
         is_aspirante: isAspirante,
         role_name: targetRoleName,
         profile_photo_url: newStudent.profilePhotoUrl,
+        attendance_token: newStudent.attendanceToken || null,
         accepted_terms: Boolean(newStudent.acceptedTerms),
         acceptedTerms: Boolean(newStudent.acceptedTerms),
         dni_copy: true,
@@ -318,6 +327,7 @@ export const updateAlumno = async (req, res, next) => {
       profile_photo_url,
       accepted_terms,
       acceptedTerms,
+      attendance_token,
     } = req.body
 
     if (req.body.role_id !== undefined) {
@@ -372,6 +382,7 @@ export const updateAlumno = async (req, res, next) => {
         ...(finalStatusId !== undefined && { statusId: finalStatusId }),
         ...(targetRoleId !== undefined && { roleId: targetRoleId }),
         ...(profile_photo_url !== undefined && { profilePhotoUrl: profile_photo_url }),
+        ...((attendance_token !== undefined ? { attendanceToken: attendance_token } : (!studentExists.attendanceToken ? { attendanceToken: `CFL404-ATT-${id}` } : {}))),
         ...(parsedTerms !== undefined && { acceptedTerms: parsedTerms }),
         userDetail: {
           upsert: {
@@ -428,6 +439,7 @@ export const updateAlumno = async (req, res, next) => {
         course: currentCourseName,
         status_id: updatedStudent.statusId,
         status: STATUS_MAP[updatedStudent.statusId] || 'Activo',
+        attendance_token: updatedStudent.attendanceToken || null,
         accepted_terms: Boolean(updatedStudent.acceptedTerms),
         acceptedTerms: Boolean(updatedStudent.acceptedTerms),
         updatedAt: updatedStudent.updatedAt,

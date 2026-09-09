@@ -11,6 +11,7 @@ import AlumnosRouter from './routes/alumnos.routes.js'
 import CooperadoraRouter from './routes/cooperadora.routes.js'
 import SettingsRouter from './routes/settings.routes.js'
 import QueueRouter from './routes/queue.routes.js'
+import attendanceRouter from './routes/attendance.routes.js'
 import { globalErrorHandler } from './middlewares/errorHandler.middlewares.js'
 
 const app = express()
@@ -99,6 +100,9 @@ app.use('/api', AlumnosRouter)
 app.use(CooperadoraRouter)
 app.use('/api', SettingsRouter)
 app.use(QueueRouter)
+app.use('/api/v1', attendanceRouter)
+app.use('/api', attendanceRouter)
+app.use(attendanceRouter)
 
 app.use(globalErrorHandler)
 

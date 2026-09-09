@@ -95,6 +95,7 @@ export const createAlumnoSchema = z
     profile_photo_url: z.string().max(2048).optional().nullable(),
     accepted_terms: z.boolean().optional(),
     acceptedTerms: z.boolean().optional(),
+    attendance_token: z.string().max(255).optional().nullable(),
   })
   .strict()
   .refine(
@@ -150,6 +151,7 @@ export const updateAlumnoSchema = z
     profile_photo_url: z.string().max(2048).optional().nullable(),
     accepted_terms: z.boolean().optional(),
     acceptedTerms: z.boolean().optional(),
+    attendance_token: z.string().max(255).optional().nullable(),
   })
   .strict()
   .refine(
