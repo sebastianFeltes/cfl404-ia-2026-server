@@ -15,7 +15,7 @@ import {
 } from '../lib/auth-tokens.js'
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || ''
-const ALLOW_AUTO_REGISTER = process.env.ALLOW_GOOGLE_AUTO_REGISTER === 'true'
+const ALLOW_AUTO_REGISTER = process.env.ALLOW_GOOGLE_AUTO_REGISTER !== 'false'
 
 const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID)
 
@@ -189,6 +189,14 @@ const syncGoogleProfile = async (user, profile) => {
 }
 
 const registerStudentFromGoogle = async (profile) => {
+    let roleId = ROLES.POSTULANTE
+    const postulanteRole = await prisma.role.findFirst({
+        where: { name: 'POSTULANTE' },
+    })
+    if (postulanteRole) {
+        roleId = postulanteRole.id
+    }
+
     const student = await prisma.user.create({
         data: {
             firstName: profile.firstName,
@@ -201,7 +209,7 @@ const registerStudentFromGoogle = async (profile) => {
             lastLoginAt: new Date(),
             acceptedTerms: parseAcceptedTerms(profile.acceptedTerms) === true,
             statusId: STATUS_PENDIENTE,
-            roleId: ROLES.POSTULANTE,
+            roleId,
             userDetail: { create: {} },
         },
         include: userInclude,
@@ -244,14 +252,11 @@ export const loginWithGoogle = async (req, res, next) => {
                     error: 'Usuario no registrado en el sistema. Por favor, comunicate con la administración del CFL 404.',
                 })
             }
-            if (profile.acceptedTerms !== true) {
-                return res.status(400).json({
-                    error: 'Debés aceptar los términos y condiciones para registrarte',
-                })
-            }
+            // Todo nuevo usuario que ingresa por Google comienza con rol POSTULANTE
             record = await registerStudentFromGoogle(profile)
             isNewAccount = true
         } else {
+            // Usuario existente: conserva intacto su rol de la base de datos (incluso si fue modificado en la BD)
             const updated = await syncGoogleProfile(record.user, profile)
             record = { user: updated, type: typeFromRole(updated.role.name) }
         }
