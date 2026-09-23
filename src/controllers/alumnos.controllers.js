@@ -204,7 +204,12 @@ export const createAlumno = async (req, res, next) => {
       dni,
       email,
       phone,
+      extra_phone,
+      extra_email,
       address,
+      dob,
+      gender,
+      nacionality,
       course_name,
       course,
       academic_level,
@@ -277,7 +282,12 @@ export const createAlumno = async (req, res, next) => {
         userDetail: {
           create: {
             phone: phone || null,
+            extraPhone: extra_phone || null,
+            extraEmail: extra_email || null,
             address: address || null,
+            dob: dob ? new Date(dob) : null,
+            gender: gender || null,
+            nacionality: nacionality || 'Argentina',
             academicLevel: academic_level || 'Secundario',
             dniCopy: 'true',
             formCopy: 'true',
@@ -350,7 +360,12 @@ export const updateAlumno = async (req, res, next) => {
       dni,
       email,
       phone,
+      extra_phone,
+      extra_email,
       address,
+      dob,
+      gender,
+      nacionality,
       course_name,
       course,
       academic_level,
@@ -421,23 +436,28 @@ export const updateAlumno = async (req, res, next) => {
           upsert: {
             create: {
               phone: phone || null,
+              extraPhone: extra_phone || null,
+              extraEmail: extra_email || null,
               address: address || null,
+              dob: dob ? new Date(dob) : null,
+              gender: gender || null,
+              nacionality: nacionality || 'Argentina',
               academicLevel: academic_level || 'Secundario',
             },
             update: {
               ...(phone !== undefined && { phone }),
+              ...(extra_phone !== undefined && { extraPhone: extra_phone }),
+              ...(extra_email !== undefined && { extraEmail: extra_email }),
               ...(address !== undefined && { address }),
+              ...(dob !== undefined && { dob: dob ? new Date(dob) : null }),
+              ...(gender !== undefined && { gender }),
+              ...(nacionality !== undefined && { nacionality }),
               ...(academic_level !== undefined && { academicLevel: academic_level }),
             },
           },
         },
       },
-      include: {
-        role: true,
-        status: true,
-        userDetail: true,
-        userCourses: { include: { course: true } },
-      },
+      include: studentInclude,
     })
 
     const selectedCourseName = course_name || course
@@ -456,27 +476,12 @@ export const updateAlumno = async (req, res, next) => {
       }
     }
 
-    const currentCourseName = selectedCourseName || updatedStudent.userCourses?.[0]?.course?.name || 'Sin curso asignado'
+    const refreshedStudent = await findStudentById(id)
 
     return res.status(200).json({
       status: 'success',
       message: 'Alumno actualizado exitosamente',
-      data: {
-        id: updatedStudent.id,
-        first_name: updatedStudent.firstName,
-        last_name: updatedStudent.lastName,
-        dni: updatedStudent.dni,
-        email: updatedStudent.email,
-        phone: updatedStudent.userDetail?.phone,
-        course_name: currentCourseName,
-        course: currentCourseName,
-        status_id: updatedStudent.statusId,
-        status: STATUS_MAP[updatedStudent.statusId] || 'Activo',
-        attendance_token: updatedStudent.attendanceToken || null,
-        accepted_terms: Boolean(updatedStudent.acceptedTerms),
-        acceptedTerms: Boolean(updatedStudent.acceptedTerms),
-        updatedAt: updatedStudent.updatedAt,
-      },
+      data: formatStudent(refreshedStudent || updatedStudent),
     })
   } catch (error) {
     next(error)

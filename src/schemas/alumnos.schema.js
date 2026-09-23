@@ -59,6 +59,7 @@ export const createAlumnoSchema = z
       .email('El formato del correo electrónico no es válido')
       .trim()
       .toLowerCase(),
+    extra_email: z.string().optional().nullable().default(''),
     phone: z
       .string()
       .optional()
@@ -130,6 +131,7 @@ export const updateAlumnoSchema = z
       })
       .optional(),
     email: z.string().email('El formato del correo electrónico no es válido').trim().toLowerCase().optional(),
+    extra_email: z.string().optional().nullable(),
     phone: z.string().optional().nullable().refine(isValidPhoneNumber, {
       message: 'El teléfono no puede ser una secuencia repetitiva o ficticia',
     }),
