@@ -12,6 +12,7 @@ import CooperadoraRouter from './routes/cooperadora.routes.js'
 import SettingsRouter from './routes/settings.routes.js'
 import SponsorsRouter from './routes/sponsors.routes.js'
 import QueueRouter from './routes/queue.routes.js'
+import attendanceRouter from './routes/attendance.routes.js'
 import { globalErrorHandler } from './middlewares/errorHandler.middlewares.js'
 
 const app = express()
@@ -51,11 +52,11 @@ app.use(limiter)
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 20,
+  max: isProduction ? 20 : 1000,
   message: { error: 'Demasiados intentos de autenticación. Probá más tarde.' },
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => req.method === 'OPTIONS' || process.env.NODE_ENV === 'test',
+  skip: (req) => req.method === 'OPTIONS' || !isProduction,
 })
 app.use('/api/auth', authLimiter)
 
@@ -102,6 +103,9 @@ app.use(CooperadoraRouter)
 app.use(SettingsRouter)
 app.use(SponsorsRouter)
 app.use(QueueRouter)
+app.use('/api/v1', attendanceRouter)
+app.use('/api', attendanceRouter)
+app.use(attendanceRouter)
 
 app.use(globalErrorHandler)
 

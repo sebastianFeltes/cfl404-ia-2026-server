@@ -1,8 +1,10 @@
-import { Router } from "express";
-import { getAttendance } from "../controllers/attendance.controllers.js";
+import { Router } from 'express'
+import { getAttendance, verifyAndRegisterAttendance } from '../controllers/attendance.controllers.js'
+import { authenticateToken, requireStaff } from '../middlewares/auth.middlewares.js'
 
-const AtendanceRouter = Router()
+const attendanceRouter = Router()
 
-AtendanceRouter.get('/attendance' ,getAttendance)
+attendanceRouter.get('/attendance', authenticateToken, requireStaff, getAttendance)
+attendanceRouter.post('/attendance/verify', authenticateToken, requireStaff, verifyAndRegisterAttendance)
 
-export default AtendanceRouter
+export default attendanceRouter

@@ -25,6 +25,7 @@ model User {
   locale          String?
   lastLoginAt     DateTime?      @map("last_login_at")
   acceptedTerms   Boolean        @default(false) @map("accepted_terms")
+  attendanceToken String?        @map("attendance_token")
   createdAt       DateTime       @default(now()) @map("created_at")
   updatedAt       DateTime       @updatedAt @map("updated_at")
 
@@ -36,6 +37,7 @@ model User {
   cooperadoraPayments CooperadoraPayment[]
   refreshTokens     RefreshToken[]
 
+  @@index([attendanceToken])
   @@map("users")
 }
 
