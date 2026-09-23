@@ -109,12 +109,27 @@ model CourseDetail {
   endorsementBy   String?  @map("endorsement_by")
   sponsorName     String?  @map("sponsor_name")
   sponsorLogo     String?  @map("sponsor_logo")
+  sponsorId       String?  @map("sponsor_id")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
   course          Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  sponsor         Sponsor? @relation(fields: [sponsorId], references: [id], onDelete: SetNull)
 
   @@map("course_detail")
+}
+
+model Sponsor {
+  id            String        @id @default(uuid())
+  name          String
+  description   String?
+  logoUrl       String?       @map("logo_url")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  courseDetails CourseDetail[]
+
+  @@map("sponsor")
 }
 
 model UserCourse {

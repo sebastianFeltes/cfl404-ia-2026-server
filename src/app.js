@@ -10,6 +10,7 @@ import StaffRouter from './routes/staff.routes.js'
 import AlumnosRouter from './routes/alumnos.routes.js'
 import CooperadoraRouter from './routes/cooperadora.routes.js'
 import SettingsRouter from './routes/settings.routes.js'
+import SponsorsRouter from './routes/sponsors.routes.js'
 import QueueRouter from './routes/queue.routes.js'
 import { globalErrorHandler } from './middlewares/errorHandler.middlewares.js'
 
@@ -97,7 +98,8 @@ app.use(StaffRouter)
 app.use('/api/v1', AlumnosRouter)
 app.use('/api', AlumnosRouter)
 app.use(CooperadoraRouter)
-app.use('/api', SettingsRouter)
+app.use(SettingsRouter)
+app.use(SponsorsRouter)
 app.use(QueueRouter)
 
 app.use(globalErrorHandler)
