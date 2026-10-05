@@ -51,3 +51,28 @@ export const createBuffetSchema = z.object({
     .trim(),
   observaciones: z.string().max(500).optional().nullable().default(''),
 })
+
+/**
+ * Esquema de validación para registrar un movimiento general de Cooperadora (gasto, donación, etc.)
+ */
+export const createCooperadoraMovementSchema = z.object({
+  fecha: z.string().optional().nullable(),
+  date: z.string().optional().nullable(),
+  monto: z.coerce
+    .number({
+      required_error: 'El monto es obligatorio',
+    })
+    .positive('El monto debe ser un número positivo mayor a 0'),
+  tipo: z.enum(['ingreso', 'egreso'], {
+    required_error: 'El tipo debe ser "ingreso" o "egreso"',
+  }),
+  category: z.string().optional().nullable(),
+  detalle: z
+    .string({
+      required_error: 'El detalle o concepto es obligatorio',
+    })
+    .min(2, 'El detalle debe contener al menos 2 caracteres')
+    .max(500)
+    .trim(),
+  observaciones: z.string().max(500).optional().nullable().default(''),
+})

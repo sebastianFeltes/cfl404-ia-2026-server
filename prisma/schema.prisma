@@ -261,6 +261,20 @@ model BuffetMovement {
   @@map("buffet_movement")
 }
 
+model CooperadoraMovement {
+  id           String   @id @default(uuid())
+  date         DateTime @default(now())
+  amount       Float
+  type         String   // "ingreso" | "egreso"
+  category     String?  // "donacion" | "premio" | "subsidio" | "gasto" | "compra" | "mantenimiento" | "otro"
+  detail       String
+  observations String?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("cooperadora_movement")
+}
+
 model RefreshToken {
   id        String    @id @default(uuid())
   userId    String    @map("user_id")

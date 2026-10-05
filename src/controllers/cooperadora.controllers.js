@@ -357,3 +357,355 @@ export const deleteBuffetMovement = async (req, res, next) => {
     next(error)
   }
 }
+
+/**
+ * Listar movimientos generales de Cooperadora (gastos, donaciones, premios, etc.)
+ */
+export const getCooperadoraMovements = async (req, res, next) => {
+  try {
+    const { tipo, year } = req.query
+
+    const whereClause = {}
+    if (tipo) {
+      whereClause.type = tipo
+    }
+    if (year) {
+      const parsedYear = parseInt(year, 10)
+      const startDate = new Date(`${parsedYear}-01-01T00:00:00.000Z`)
+      const endDate = new Date(`${parsedYear}-12-31T23:59:59.999Z`)
+      whereClause.date = {
+        gte: startDate,
+        lte: endDate,
+      }
+    }
+
+    const { take } = parsePagination(req.query, { defaultTake: 100, maxTake: 200 })
+    const records = await prisma.cooperadoraMovement.findMany({
+      where: whereClause,
+      orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+      take,
+    })
+
+    const formattedRecords = records.map((r) => ({
+      id: r.id,
+      fecha: r.date ? r.date.toISOString().split('T')[0] : '',
+      monto: r.amount,
+      tipo: r.type,
+      category: r.category || '',
+      detalle: r.detail,
+      observaciones: r.observations || '',
+      created_at: r.createdAt,
+    }))
+
+    return res.status(200).json({
+      status: 'success',
+      count: formattedRecords.length,
+      data: formattedRecords,
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+/**
+ * Registrar un nuevo movimiento general de Cooperadora
+ */
+export const createCooperadoraMovement = async (req, res, next) => {
+  try {
+    const { fecha, date, monto, tipo, category, detalle, observaciones } = req.body
+
+    const rawDate = fecha || date
+    const parsedDate = rawDate ? new Date(rawDate + 'T00:00:00') : new Date()
+
+    const newRecord = await prisma.cooperadoraMovement.create({
+      data: {
+        date: parsedDate,
+        amount: parseFloat(monto),
+        type: tipo,
+        category: category ? category.trim() : null,
+        detail: detalle.trim(),
+        observations: observaciones ? observaciones.trim() : null,
+      },
+    })
+
+    return res.status(201).json({
+      status: 'success',
+      message: 'Movimiento de cooperadora registrado exitosamente',
+      data: {
+        id: newRecord.id,
+        fecha: newRecord.date ? newRecord.date.toISOString().split('T')[0] : '',
+        monto: newRecord.amount,
+        tipo: newRecord.type,
+        category: newRecord.category || '',
+        detalle: newRecord.detail,
+        observaciones: newRecord.observations || '',
+        created_at: newRecord.createdAt,
+      },
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+/**
+ * Eliminar un movimiento general de Cooperadora
+ */
+export const deleteCooperadoraMovement = async (req, res, next) => {
+  try {
+    const { id } = req.params
+
+    const record = await prisma.cooperadoraMovement.findUnique({
+      where: { id },
+    })
+
+    if (!record) {
+      return res.status(404).json({
+        error: 'Movimiento de cooperadora no encontrado',
+      })
+    }
+
+    await prisma.cooperadoraMovement.delete({
+      where: { id },
+    })
+
+    return res.status(200).json({
+      status: 'success',
+      message: 'Movimiento de cooperadora eliminado correctamente',
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+/**
+ * Reporte de Balance Contable Consolidado y Dinámico
+ * Autogenera los movimientos a partir de cuotas de alumnos, movimientos de cooperadora y buffet.
+ */
+export const getBalanceReport = async (req, res, next) => {
+  try {
+    const { year } = req.query
+    const targetYear = year ? parseInt(year, 10) : new Date().getFullYear()
+
+    const startDate = new Date(`${targetYear}-01-01T00:00:00.000Z`)
+    const endDate = new Date(`${targetYear}-12-31T23:59:59.999Z`)
+
+    // Consultar las 3 fuentes de ingresos y egresos para el año indicado
+    const [payments, coopMovements, buffetMovements] = await Promise.all([
+      prisma.cooperadoraPayment.findMany({
+        where: { year: targetYear },
+        include: {
+          user: {
+            select: {
+              firstName: true,
+              lastName: true,
+              dni: true,
+            },
+          },
+        },
+        orderBy: [{ paymentDate: 'asc' }, { createdAt: 'asc' }],
+      }),
+      prisma.cooperadoraMovement.findMany({
+        where: {
+          date: {
+            gte: startDate,
+            lte: endDate,
+          },
+        },
+        orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+      }),
+      prisma.buffetMovement.findMany({
+        where: {
+          date: {
+            gte: startDate,
+            lte: endDate,
+          },
+        },
+        orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+      }),
+    ])
+
+    const MES_NOMBRES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+
+    // Unificar todos los registros como entradas contables
+    const unified = []
+
+    // 1. Cuotas de Alumnos (Ingresos de Cooperadora)
+    payments.forEach((p) => {
+      const studentName = p.user ? `${p.user.firstName} ${p.user.lastName}`.trim() : 'Alumno'
+      const studentDni = p.user?.dni ? ` (DNI: ${p.user.dni})` : ''
+      const monthName = MES_NOMBRES[p.month - 1] || `Mes ${p.month}`
+      const dateStr = p.paymentDate
+        ? p.paymentDate.toISOString().split('T')[0]
+        : `${targetYear}-${String(p.month).padStart(2, '0')}-01`
+      const rawDate = p.paymentDate || new Date(`${targetYear}-${String(p.month).padStart(2, '0')}-01T12:00:00.000Z`)
+
+      unified.push({
+        id: `pay_${p.id}`,
+        rawId: p.id,
+        entityType: 'payment',
+        origen: 'cooperadora',
+        tipo: 'ingreso',
+        categoria: 'cuota',
+        detalle: `Cuota ${monthName} - ${studentName}${studentDni}`,
+        observaciones: p.notes || '',
+        fecha: dateStr,
+        dateObj: rawDate,
+        month: p.month,
+        ingreso: Number(p.amount),
+        egreso: 0,
+        canDelete: true,
+      })
+    })
+
+    // 2. Movimientos Generales de Cooperadora (Gastos o Donaciones/Premios)
+    coopMovements.forEach((m) => {
+      const isIngreso = m.type === 'ingreso'
+      const dateStr = m.date ? m.date.toISOString().split('T')[0] : ''
+      const rawDate = m.date || new Date()
+      const monthNum = rawDate.getMonth() + 1
+
+      unified.push({
+        id: `coop_${m.id}`,
+        rawId: m.id,
+        entityType: 'coop_movement',
+        origen: 'cooperadora',
+        tipo: m.type,
+        categoria: m.category || (isIngreso ? 'donacion' : 'gasto'),
+        detalle: m.detail,
+        observaciones: m.observations || '',
+        fecha: dateStr,
+        dateObj: rawDate,
+        month: monthNum,
+        ingreso: isIngreso ? Number(m.amount) : 0,
+        egreso: !isIngreso ? Number(m.amount) : 0,
+        canDelete: true,
+      })
+    })
+
+    // 3. Movimientos de Buffet (Ventas y Gastos de Cantina)
+    buffetMovements.forEach((b) => {
+      const isIngreso = b.type === 'ingreso'
+      const dateStr = b.date ? b.date.toISOString().split('T')[0] : ''
+      const rawDate = b.date || new Date()
+      const monthNum = rawDate.getMonth() + 1
+
+      unified.push({
+        id: `buf_${b.id}`,
+        rawId: b.id,
+        entityType: 'buffet',
+        origen: 'buffet',
+        tipo: b.type,
+        categoria: isIngreso ? 'venta_buffet' : 'gasto_buffet',
+        detalle: b.detail,
+        observaciones: b.observations || '',
+        fecha: dateStr,
+        dateObj: rawDate,
+        month: monthNum,
+        ingreso: isIngreso ? Number(b.amount) : 0,
+        egreso: !isIngreso ? Number(b.amount) : 0,
+        canDelete: true,
+      })
+    })
+
+    // Ordenar cronológicamente para calcular el saldo acumulado real en cada punto
+    unified.sort((a, b) => new Date(a.dateObj).getTime() - new Date(b.dateObj).getTime())
+
+    let runningBalance = 0
+    const entriesWithBalance = unified.map((item) => {
+      runningBalance += (item.ingreso - item.egreso)
+      return {
+        ...item,
+        saldoAcumulado: runningBalance,
+      }
+    })
+
+    // Inicializar serie de 12 meses para gráficos y resúmenes
+    const monthlyStats = Array.from({ length: 12 }, (_, i) => {
+      const monthIndex = i + 1
+      return {
+        month: monthIndex,
+        monthName: MES_NOMBRES[i],
+        ingresosCooperadora: 0,
+        ingresosBuffet: 0,
+        totalIngresos: 0,
+        egresosCooperadora: 0,
+        egresosBuffet: 0,
+        totalEgresos: 0,
+        balanceMes: 0,
+        balanceAcumulado: 0,
+      }
+    })
+
+    // Sumarizar por mes
+    let cumBalance = 0
+    for (let m = 1; m <= 12; m++) {
+      const mStats = monthlyStats[m - 1]
+      const monthEntries = entriesWithBalance.filter((e) => e.month === m)
+
+      monthEntries.forEach((e) => {
+        if (e.origen === 'cooperadora') {
+          if (e.tipo === 'ingreso') {
+            mStats.ingresosCooperadora += e.ingreso
+          } else {
+            mStats.egresosCooperadora += e.egreso
+          }
+        } else if (e.origen === 'buffet') {
+          if (e.tipo === 'ingreso') {
+            mStats.ingresosBuffet += e.ingreso
+          } else {
+            mStats.egresosBuffet += e.egreso
+          }
+        }
+      })
+
+      mStats.totalIngresos = mStats.ingresosCooperadora + mStats.ingresosBuffet
+      mStats.totalEgresos = mStats.egresosCooperadora + mStats.egresosBuffet
+      mStats.balanceMes = mStats.totalIngresos - mStats.totalEgresos
+      cumBalance += mStats.balanceMes
+      mStats.balanceAcumulado = cumBalance
+    }
+
+    // Totales globales y KPIs
+    const totalCuotas = payments.reduce((acc, p) => acc + Number(p.amount || 0), 0)
+    const totalDonaciones = coopMovements
+      .filter((m) => m.type === 'ingreso')
+      .reduce((acc, m) => acc + Number(m.amount || 0), 0)
+    const totalGastosCooperadora = coopMovements
+      .filter((m) => m.type === 'egreso')
+      .reduce((acc, m) => acc + Number(m.amount || 0), 0)
+
+    const totalIngresosBuffet = buffetMovements
+      .filter((b) => b.type === 'ingreso')
+      .reduce((acc, b) => acc + Number(b.amount || 0), 0)
+    const totalEgresosBuffet = buffetMovements
+      .filter((b) => b.type === 'egreso')
+      .reduce((acc, b) => acc + Number(b.amount || 0), 0)
+
+    const totalIngresos = totalCuotas + totalDonaciones + totalIngresosBuffet
+    const totalEgresos = totalGastosCooperadora + totalEgresosBuffet
+    const balanceFinal = totalIngresos - totalEgresos
+
+    // Para la tabla, devolvemos orden descendente (más recientes arriba) con el saldo acumulado correcto
+    const reversedEntries = [...entriesWithBalance].reverse()
+
+    return res.status(200).json({
+      status: 'success',
+      year: targetYear,
+      kpis: {
+        totalIngresos,
+        totalEgresos,
+        balanceFinal,
+        totalCuotas,
+        totalDonaciones,
+        totalGastosCooperadora,
+        totalIngresosBuffet,
+        totalEgresosBuffet,
+        totalMovimientos: unified.length,
+      },
+      monthlyStats,
+      entries: reversedEntries,
+    })
+  } catch (error) {
+    next(error)
+  }
+}

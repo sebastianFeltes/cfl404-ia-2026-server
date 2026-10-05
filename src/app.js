@@ -49,11 +49,18 @@ app.use(limiter)
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 20,
+  max: isProduction ? 30 : 2000,
   message: { error: 'Demasiados intentos de autenticación. Probá más tarde.' },
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => req.method === 'OPTIONS' || process.env.NODE_ENV === 'test',
+  skip: (req) =>
+    req.method === 'OPTIONS' ||
+    process.env.NODE_ENV === 'test' ||
+    !isProduction ||
+    req.path === '/me' ||
+    req.path === '/logout' ||
+    req.originalUrl?.includes('/api/auth/me') ||
+    req.originalUrl?.includes('/api/auth/logout'),
 })
 app.use('/api/auth', authLimiter)
 

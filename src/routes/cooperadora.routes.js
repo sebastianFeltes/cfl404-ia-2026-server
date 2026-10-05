@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { authenticateToken, authorizeRoles, requireAdmin } from '../middlewares/auth.middlewares.js'
 import { validateSchema } from '../middlewares/validateSchema.js'
-import { savePaymentSchema, createBuffetSchema } from '../schemas/cooperadora.schema.js'
+import { savePaymentSchema, createBuffetSchema, createCooperadoraMovementSchema } from '../schemas/cooperadora.schema.js'
 import {
   getPayments,
   savePayment,
@@ -9,6 +9,10 @@ import {
   getBuffetMovements,
   createBuffetMovement,
   deleteBuffetMovement,
+  getCooperadoraMovements,
+  createCooperadoraMovement,
+  deleteCooperadoraMovement,
+  getBalanceReport,
 } from '../controllers/cooperadora.controllers.js'
 
 const CooperadoraRouter = Router()
@@ -60,6 +64,37 @@ CooperadoraRouter.delete(
   authenticateToken,
   requireAdmin,
   deleteBuffetMovement
+)
+
+// ── Rutas de Movimientos Generales de Cooperadora (Gastos, Donaciones, etc.) ──
+CooperadoraRouter.get(
+  '/api/v1/cooperadora/movimientos',
+  authenticateToken,
+  authorizeRoles(COOPERADORA_ROLES),
+  getCooperadoraMovements
+)
+
+CooperadoraRouter.post(
+  '/api/v1/cooperadora/movimientos',
+  authenticateToken,
+  authorizeRoles(COOPERADORA_ROLES),
+  validateSchema(createCooperadoraMovementSchema),
+  createCooperadoraMovement
+)
+
+CooperadoraRouter.delete(
+  '/api/v1/cooperadora/movimientos/:id',
+  authenticateToken,
+  requireAdmin,
+  deleteCooperadoraMovement
+)
+
+// ── Ruta de Balance Contable Consolidado y Dinámico ───────────────────────────
+CooperadoraRouter.get(
+  '/api/v1/cooperadora/balance',
+  authenticateToken,
+  authorizeRoles(COOPERADORA_ROLES),
+  getBalanceReport
 )
 
 export default CooperadoraRouter
