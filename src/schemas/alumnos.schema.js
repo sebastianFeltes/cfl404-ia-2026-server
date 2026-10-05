@@ -59,6 +59,7 @@ export const createAlumnoSchema = z
       .email('El formato del correo electrónico no es válido')
       .trim()
       .toLowerCase(),
+    extra_email: z.string().optional().nullable().default(''),
     phone: z
       .string()
       .optional()
@@ -95,6 +96,7 @@ export const createAlumnoSchema = z
     profile_photo_url: z.string().max(2048).optional().nullable(),
     accepted_terms: z.boolean().optional(),
     acceptedTerms: z.boolean().optional(),
+    attendance_token: z.string().max(255).optional().nullable(),
   })
   .strict()
   .refine(
@@ -129,6 +131,7 @@ export const updateAlumnoSchema = z
       })
       .optional(),
     email: z.string().email('El formato del correo electrónico no es válido').trim().toLowerCase().optional(),
+    extra_email: z.string().optional().nullable(),
     phone: z.string().optional().nullable().refine(isValidPhoneNumber, {
       message: 'El teléfono no puede ser una secuencia repetitiva o ficticia',
     }),
@@ -150,6 +153,7 @@ export const updateAlumnoSchema = z
     profile_photo_url: z.string().max(2048).optional().nullable(),
     accepted_terms: z.boolean().optional(),
     acceptedTerms: z.boolean().optional(),
+    attendance_token: z.string().max(255).optional().nullable(),
   })
   .strict()
   .refine(

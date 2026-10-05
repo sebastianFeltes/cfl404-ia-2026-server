@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import prisma from '../lib/prisma.js'
 import { parsePagination } from '../lib/pagination.js'
 import { assertAllowedPhotoUrl } from '../lib/photo-url.js'
@@ -65,7 +66,21 @@ const studentInclude = {
   userDetail: true,
   userCourses: {
     include: {
-      course: true,
+      course: {
+        include: {
+          instructor: true,
+          classroomCourses: {
+            include: {
+              classroom: true,
+            },
+          },
+          courseDays: {
+            include: {
+              day: true,
+            },
+          },
+        },
+      },
     },
   },
   role: true,
@@ -73,9 +88,23 @@ const studentInclude = {
 }
 
 function formatStudent(s) {
-  const activeCourse = s.userCourses?.[0]?.course?.name || 'Sin curso asignado'
+  const primaryUserCourse = s.userCourses?.[0]
+  const courseObj = primaryUserCourse?.course
+  const activeCourse = courseObj?.name || 'Sin curso asignado'
   const statusText = STATUS_MAP[s.statusId] || s.status?.name || 'Activo'
   const isAspirante = s.statusId === 3 || s.role?.name === 'POSTULANTE'
+
+  const instructorName = courseObj?.instructor
+    ? `Prof. ${courseObj.instructor.firstName} ${courseObj.instructor.lastName}`.trim()
+    : null
+  const schedule = (courseObj?.startTime && courseObj?.endTime)
+    ? `${courseObj.startTime} a ${courseObj.endTime} hs`
+    : (courseObj?.startTime ? `${courseObj.startTime} hs` : null)
+  const classroomName = courseObj?.classroomCourses?.[0]?.classroom?.name 
+    ? (courseObj.classroomCourses[0].classroom.name.charAt(0).toUpperCase() + courseObj.classroomCourses[0].classroom.name.slice(1))
+    : null
+  const days = courseObj?.courseDays?.map(cd => cd.day?.name).filter(Boolean).join(', ') || null
+  const maxAbsences = courseObj?.maxAbsences ?? null
 
   return {
     id: s.id,
@@ -93,6 +122,11 @@ function formatStudent(s) {
     academic_level: s.userDetail?.academicLevel || 'Secundario',
     course_name: activeCourse,
     course: activeCourse,
+    instructor_name: instructorName,
+    course_schedule: schedule,
+    classroom_name: classroomName,
+    course_days: days,
+    max_absences: maxAbsences,
     enrollment_date: new Date(s.createdAt).toLocaleDateString('es-AR'),
     status_id: s.statusId,
     status: statusText,
@@ -100,6 +134,7 @@ function formatStudent(s) {
     is_aspirante: isAspirante,
     role_name: s.role?.name || (isAspirante ? 'POSTULANTE' : 'ALUMNO'),
     profile_photo_url: s.profilePhotoUrl,
+    attendance_token: s.attendanceToken || (s.id ? `CFL404-ATT-${s.id}` : null),
     accepted_terms: Boolean(s.acceptedTerms),
     acceptedTerms: Boolean(s.acceptedTerms),
     dni_copy: true,
@@ -169,7 +204,12 @@ export const createAlumno = async (req, res, next) => {
       dni,
       email,
       phone,
+      extra_phone,
+      extra_email,
       address,
+      dob,
+      gender,
+      nacionality,
       course_name,
       course,
       academic_level,
@@ -179,6 +219,7 @@ export const createAlumno = async (req, res, next) => {
       profile_photo_url,
       accepted_terms,
       acceptedTerms,
+      attendance_token,
     } = req.body
 
     if (req.body.role_id !== undefined) {
@@ -223,8 +264,12 @@ export const createAlumno = async (req, res, next) => {
       finalStatusId = 3
     }
 
+    const studentId = randomUUID()
+    const computedToken = attendance_token || `CFL404-ATT-${studentId}`
+
     const newStudent = await prisma.user.create({
       data: {
+        id: studentId,
         firstName: first_name,
         lastName: last_name,
         dni,
@@ -233,10 +278,16 @@ export const createAlumno = async (req, res, next) => {
         roleId: alumnoRole.id,
         profilePhotoUrl: profile_photo_url || null,
         acceptedTerms: parsedTerms === true,
+        attendanceToken: computedToken,
         userDetail: {
           create: {
             phone: phone || null,
+            extraPhone: extra_phone || null,
+            extraEmail: extra_email || null,
             address: address || null,
+            dob: dob ? new Date(dob) : null,
+            gender: gender || null,
+            nacionality: nacionality || 'Argentina',
             academicLevel: academic_level || 'Secundario',
             dniCopy: 'true',
             formCopy: 'true',
@@ -286,6 +337,7 @@ export const createAlumno = async (req, res, next) => {
         is_aspirante: isAspirante,
         role_name: targetRoleName,
         profile_photo_url: newStudent.profilePhotoUrl,
+        attendance_token: newStudent.attendanceToken || null,
         accepted_terms: Boolean(newStudent.acceptedTerms),
         acceptedTerms: Boolean(newStudent.acceptedTerms),
         dni_copy: true,
@@ -308,7 +360,12 @@ export const updateAlumno = async (req, res, next) => {
       dni,
       email,
       phone,
+      extra_phone,
+      extra_email,
       address,
+      dob,
+      gender,
+      nacionality,
       course_name,
       course,
       academic_level,
@@ -318,6 +375,7 @@ export const updateAlumno = async (req, res, next) => {
       profile_photo_url,
       accepted_terms,
       acceptedTerms,
+      attendance_token,
     } = req.body
 
     if (req.body.role_id !== undefined) {
@@ -372,28 +430,34 @@ export const updateAlumno = async (req, res, next) => {
         ...(finalStatusId !== undefined && { statusId: finalStatusId }),
         ...(targetRoleId !== undefined && { roleId: targetRoleId }),
         ...(profile_photo_url !== undefined && { profilePhotoUrl: profile_photo_url }),
+        ...((attendance_token !== undefined ? { attendanceToken: attendance_token } : (!studentExists.attendanceToken ? { attendanceToken: `CFL404-ATT-${id}` } : {}))),
         ...(parsedTerms !== undefined && { acceptedTerms: parsedTerms }),
         userDetail: {
           upsert: {
             create: {
               phone: phone || null,
+              extraPhone: extra_phone || null,
+              extraEmail: extra_email || null,
               address: address || null,
+              dob: dob ? new Date(dob) : null,
+              gender: gender || null,
+              nacionality: nacionality || 'Argentina',
               academicLevel: academic_level || 'Secundario',
             },
             update: {
               ...(phone !== undefined && { phone }),
+              ...(extra_phone !== undefined && { extraPhone: extra_phone }),
+              ...(extra_email !== undefined && { extraEmail: extra_email }),
               ...(address !== undefined && { address }),
+              ...(dob !== undefined && { dob: dob ? new Date(dob) : null }),
+              ...(gender !== undefined && { gender }),
+              ...(nacionality !== undefined && { nacionality }),
               ...(academic_level !== undefined && { academicLevel: academic_level }),
             },
           },
         },
       },
-      include: {
-        role: true,
-        status: true,
-        userDetail: true,
-        userCourses: { include: { course: true } },
-      },
+      include: studentInclude,
     })
 
     const selectedCourseName = course_name || course
@@ -412,26 +476,12 @@ export const updateAlumno = async (req, res, next) => {
       }
     }
 
-    const currentCourseName = selectedCourseName || updatedStudent.userCourses?.[0]?.course?.name || 'Sin curso asignado'
+    const refreshedStudent = await findStudentById(id)
 
     return res.status(200).json({
       status: 'success',
       message: 'Alumno actualizado exitosamente',
-      data: {
-        id: updatedStudent.id,
-        first_name: updatedStudent.firstName,
-        last_name: updatedStudent.lastName,
-        dni: updatedStudent.dni,
-        email: updatedStudent.email,
-        phone: updatedStudent.userDetail?.phone,
-        course_name: currentCourseName,
-        course: currentCourseName,
-        status_id: updatedStudent.statusId,
-        status: STATUS_MAP[updatedStudent.statusId] || 'Activo',
-        accepted_terms: Boolean(updatedStudent.acceptedTerms),
-        acceptedTerms: Boolean(updatedStudent.acceptedTerms),
-        updatedAt: updatedStudent.updatedAt,
-      },
+      data: formatStudent(refreshedStudent || updatedStudent),
     })
   } catch (error) {
     next(error)
