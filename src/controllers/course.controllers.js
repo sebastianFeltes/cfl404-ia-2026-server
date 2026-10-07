@@ -1,26 +1,47 @@
 import prisma from '../lib/prisma.js'
 import { getCourseStageFromDates, formatCourseSchedule, validateCourseStageDates } from '../lib/courseStage.js'
 import { parsePagination } from '../lib/pagination.js'
-import { assertAllowedPhotoUrl } from '../lib/photo-url.js'
+import { mapCourseSponsors, syncCourseSponsors } from '../lib/courseSponsors.js'
+import { resolveEnrollmentStatus } from '../lib/courseEnrollment.js'
 
 const COURSE_STATUS_UI = {
-  ACTIVO: {
+  activo: {
     label: 'Activo',
     color: 'bg-emerald-500/10 text-emerald-700 border-emerald-300 dark:text-emerald-400',
     badgeColor: 'bg-emerald-500',
   },
-  INACTIVO: {
+  inactivo: {
     label: 'Inactivo',
     color: 'bg-slate-500/10 text-slate-700 border-slate-300 dark:text-slate-400',
     badgeColor: 'bg-slate-500',
   },
-  PENDIENTE: {
+  pendiente: {
     label: 'Pendiente',
     color: 'bg-amber-500/10 text-amber-700 border-amber-300 dark:text-amber-400',
     badgeColor: 'bg-amber-500',
   },
-  EGRESADO: {
+  egresado: {
     label: 'Finalizado',
+    color: 'bg-gray-500/10 text-gray-700 border-gray-300 dark:text-gray-400',
+    badgeColor: 'bg-gray-500',
+  },
+  inscripcion_abierta: {
+    label: 'Inscripción Abierta',
+    color: 'bg-emerald-500/10 text-emerald-700 border-emerald-300 dark:text-emerald-400',
+    badgeColor: 'bg-emerald-500',
+  },
+  ultimos_cupos: {
+    label: 'Últimos Cupos',
+    color: 'bg-amber-500/10 text-amber-700 border-amber-300 dark:text-amber-400',
+    badgeColor: 'bg-amber-500',
+  },
+  cupo_completo: {
+    label: 'Cupo Completo',
+    color: 'bg-rose-500/10 text-rose-700 border-rose-300 dark:text-rose-400',
+    badgeColor: 'bg-rose-500',
+  },
+  curso_finalizado: {
+    label: 'Curso Finalizado',
     color: 'bg-gray-500/10 text-gray-700 border-gray-300 dark:text-gray-400',
     badgeColor: 'bg-gray-500',
   },
@@ -36,6 +57,10 @@ const PUBLIC_INSTRUCTOR_SELECT = {
 
 const COURSE_INCLUDE = {
   courseDetail: true,
+  courseSponsors: {
+    include: { sponsor: true },
+    orderBy: { createdAt: 'asc' },
+  },
   instructor: {
     select: PUBLIC_INSTRUCTOR_SELECT,
   },
@@ -65,8 +90,8 @@ export function toClientCourse(course) {
     endDate: course.endDate,
     isAnnual: course.isAnnual,
   })
-  const statusName = course.status?.name || 'ACTIVO'
-  const statusUi = COURSE_STATUS_UI[statusName] || COURSE_STATUS_UI.ACTIVO
+  const statusName = String(course.status?.name || 'activo').toLowerCase()
+  const statusUi = COURSE_STATUS_UI[statusName] || COURSE_STATUS_UI.activo
   const quota = course.courseDetail?.quota ?? 0
   const enrolledCount = course._count?.userCourses ?? 0
   const availableQuota = Math.max(0, quota - enrolledCount)
@@ -79,6 +104,13 @@ export function toClientCourse(course) {
     courseDays: course.courseDays,
   })
   const familyName = course.family?.name || null
+  const sponsors = mapCourseSponsors(course.courseSponsors)
+  const enrollmentStatus = resolveEnrollmentStatus({
+    status: course.status,
+    availableQuota,
+    quota,
+    endDate: course.endDate,
+  })
 
   return {
     id: course.id,
@@ -122,14 +154,10 @@ export function toClientCourse(course) {
     staff: instructorName || 'Sin instructor asignado',
     staffId: course.instructorId,
     instructorName,
-    sponsor: course.courseDetail?.sponsorName
-      ? {
-          name: course.courseDetail.sponsorName,
-          logo: course.courseDetail.sponsorLogo,
-          mention: `Patrocinado por ${course.courseDetail.sponsorName}`,
-          badge: course.courseDetail.sponsorName,
-        }
-      : null,
+    sponsors,
+    sponsorIds: sponsors.map((sponsor) => sponsor.id),
+    sponsor: sponsors[0] || null,
+    enrollmentStatus,
     detail: {
       description: course.courseDetail?.description || '',
       quota,
@@ -148,12 +176,12 @@ async function resolveInstructorId(instructorId) {
     const instructor = await prisma.user.findFirst({
       where: {
         id: instructorId,
-        role: { name: 'INSTRUCTOR' },
+        role: { name: 'instructor' },
       },
       select: { id: true },
     })
     if (!instructor) {
-      const error = new Error('El instructor seleccionado no existe o no tiene rol INSTRUCTOR')
+      const error = new Error('El instructor seleccionado no existe o no tiene rol instructor')
       error.statusCode = 400
       throw error
     }
@@ -161,7 +189,7 @@ async function resolveInstructorId(instructorId) {
   }
 
   const fallback = await prisma.user.findFirst({
-    where: { role: { name: 'INSTRUCTOR' }, statusId: 1 },
+    where: { role: { name: 'instructor' }, statusId: 1 },
     select: { id: true },
   })
   if (!fallback) {
@@ -255,12 +283,9 @@ export const createCourse = async (req, res, next) => {
       classesQuantity = 32,
       titleRequired = false,
       endorsementBy = 'Ministerio de Educación y Trabajo de la Provincia de Buenos Aires',
-      sponsorName,
-      sponsorLogo,
+      sponsorIds = [],
       dayIds = [],
     } = req.body
-
-    if (sponsorLogo) assertAllowedPhotoUrl(sponsorLogo)
 
     const dateError = validateCourseStageDates({ startDate, endDate, isAnnual })
     if (dateError) {
@@ -291,13 +316,12 @@ export const createCourse = async (req, res, next) => {
               classesQuantity: Number(classesQuantity),
               titleRequired: Boolean(titleRequired),
               endorsementBy,
-              sponsorName: sponsorName || null,
-              sponsorLogo: sponsorLogo || null,
             },
           },
         },
       })
 
+      await syncCourseSponsors(tx, created.id, sponsorIds)
       await syncCourseDays(tx, created.id, dayIds)
 
       return tx.course.findUnique({
@@ -333,8 +357,7 @@ export const updateCourse = async (req, res, next) => {
       classesQuantity,
       titleRequired,
       endorsementBy,
-      sponsorName,
-      sponsorLogo,
+      sponsorIds,
       dayIds,
     } = req.body
 
@@ -369,8 +392,6 @@ export const updateCourse = async (req, res, next) => {
         ...(classesQuantity !== undefined && { classesQuantity: Number(classesQuantity) }),
         ...(titleRequired !== undefined && { titleRequired: Boolean(titleRequired) }),
         ...(endorsementBy !== undefined && { endorsementBy }),
-        ...(sponsorName !== undefined && { sponsorName }),
-        ...(sponsorLogo !== undefined && { sponsorLogo }),
       }
 
       await tx.course.update({
@@ -400,13 +421,15 @@ export const updateCourse = async (req, res, next) => {
                     classesQuantity: Number(classesQuantity ?? 32),
                     titleRequired: Boolean(titleRequired),
                     endorsementBy: endorsementBy || 'Ministerio de Educación y Trabajo de la Provincia de Buenos Aires',
-                    sponsorName: sponsorName || null,
-                    sponsorLogo: sponsorLogo || null,
                   },
                 },
           }),
         },
       })
+
+      if (sponsorIds !== undefined) {
+        await syncCourseSponsors(tx, id, sponsorIds)
+      }
 
       if (dayIds !== undefined) {
         await syncCourseDays(tx, id, dayIds)
@@ -447,6 +470,7 @@ export const deleteCourse = async (req, res, next) => {
       await tx.userCourse.deleteMany({ where: { courseId: id } })
       await tx.classroomCourse.deleteMany({ where: { courseId: id } })
       await tx.courseDay.deleteMany({ where: { courseId: id } })
+      await tx.courseSponsor.deleteMany({ where: { courseId: id } })
       await tx.courseDetail.deleteMany({ where: { courseId: id } })
       await tx.course.delete({ where: { id } })
     })

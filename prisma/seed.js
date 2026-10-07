@@ -1,5 +1,11 @@
 import 'dotenv/config'
 import prisma from '../src/lib/prisma.js'
+import { ensureAttendanceToken } from '../src/lib/attendance-token.js'
+import {
+  CURSOS_WEB_2026,
+  LEGACY_COURSE_NAMES,
+  PLACEHOLDER_INSTRUCTOR_EMAIL,
+} from './cursos-web-2026.js'
 
 const MOCK_STUDENTS_SEED = [
   {
@@ -134,6 +140,7 @@ const ROLES = {
   INSTRUCTOR: 7,
   ALUMNO: 8,
   POSTULANTE: 9,
+  CONTRALOR: 10,
 }
 
 const STATUSES = {
@@ -141,6 +148,13 @@ const STATUSES = {
   INACTIVO: 2,
   PENDIENTE: 3,
   EGRESADO: 4,
+  SUSPENDIDO: 5,
+  BLOQUEADO: 6,
+  ELIMINADO: 7,
+  INSCRIPCION_ABIERTA: 8,
+  ULTIMOS_CUPOS: 9,
+  CUPO_COMPLETO: 10,
+  CURSO_FINALIZADO: 11,
 }
 
 async function upsertCatalog(delegate, { id, name }, label) {
@@ -150,6 +164,11 @@ async function upsertCatalog(delegate, { id, name }, label) {
     console.log(`✅ ${label} creado: ${name}`)
     return
   }
+  if (exists.name !== name) {
+    await delegate.update({ where: { id }, data: { name } })
+    console.log(`🔄 ${label} actualizado: ${exists.name} → ${name}`)
+    return
+  }
   console.log(`ℹ️ ${label} ya existe: ${name}`)
 }
 
@@ -157,15 +176,16 @@ async function main() {
   console.log('🌱 Poblando base de datos CFL 404...')
 
   const rolesData = [
-    { id: ROLES.GOD, name: 'GOD' },
-    { id: ROLES.ADMIN, name: 'ADMIN' },
-    { id: ROLES.DIRECTOR, name: 'DIRECTOR' },
-    { id: ROLES.REGENTE, name: 'REGENTE' },
-    { id: ROLES.SECRETARIA, name: 'SECRETARIA' },
-    { id: ROLES.PRECEPTORIA, name: 'PRECEPTORIA' },
-    { id: ROLES.INSTRUCTOR, name: 'INSTRUCTOR' },
-    { id: ROLES.ALUMNO, name: 'ALUMNO' },
-    { id: ROLES.POSTULANTE, name: 'POSTULANTE' },
+    { id: ROLES.GOD, name: 'god' },
+    { id: ROLES.ADMIN, name: 'admin' },
+    { id: ROLES.DIRECTOR, name: 'director' },
+    { id: ROLES.REGENTE, name: 'regente' },
+    { id: ROLES.SECRETARIA, name: 'secretaria' },
+    { id: ROLES.PRECEPTORIA, name: 'preceptoria' },
+    { id: ROLES.INSTRUCTOR, name: 'instructor' },
+    { id: ROLES.ALUMNO, name: 'alumno' },
+    { id: ROLES.POSTULANTE, name: 'postulante' },
+    { id: ROLES.CONTRALOR, name: 'contralor' },
   ]
 
   for (const role of rolesData) {
@@ -173,10 +193,17 @@ async function main() {
   }
 
   const statusesData = [
-    { id: STATUSES.ACTIVO, name: 'ACTIVO' },
-    { id: STATUSES.INACTIVO, name: 'INACTIVO' },
-    { id: STATUSES.PENDIENTE, name: 'PENDIENTE' },
-    { id: STATUSES.EGRESADO, name: 'EGRESADO' },
+    { id: STATUSES.ACTIVO, name: 'activo' },
+    { id: STATUSES.INACTIVO, name: 'inactivo' },
+    { id: STATUSES.PENDIENTE, name: 'pendiente' },
+    { id: STATUSES.EGRESADO, name: 'egresado' },
+    { id: STATUSES.SUSPENDIDO, name: 'suspendido' },
+    { id: STATUSES.BLOQUEADO, name: 'bloqueado' },
+    { id: STATUSES.ELIMINADO, name: 'eliminado' },
+    { id: STATUSES.INSCRIPCION_ABIERTA, name: 'inscripcion_abierta' },
+    { id: STATUSES.ULTIMOS_CUPOS, name: 'ultimos_cupos' },
+    { id: STATUSES.CUPO_COMPLETO, name: 'cupo_completo' },
+    { id: STATUSES.CURSO_FINALIZADO, name: 'curso_finalizado' },
   ]
 
   for (const status of statusesData) {
@@ -261,286 +288,36 @@ async function main() {
     console.log(`✅ Instructor por defecto creado: ${defaultInstructor.firstName} ${defaultInstructor.lastName}`)
   }
 
-  const COURSES_SEED = [
-    {
-      name: 'Operador de PC',
-      family: 'Tecnología',
-      isAnnual: false,
-      startDate: '2026-03-10',
-      endDate: '2026-07-02',
-      startTime: '18:00',
-      endTime: '21:00',
-      preEnrollmentDate: '2026-02-15',
-      days: ['Lunes', 'Miércoles'],
-      maxAbsences: 4,
-      statusId: STATUSES.ACTIVO,
-      description: 'Manejo de sistema operativo, ofimática, internet y herramientas digitales básicas para el entorno laboral.',
-      quota: 25,
-      hourQuantity: 120,
-      classesQuantity: 32,
-    },
-    {
-      name: 'Programador Web',
-      family: 'Tecnología',
-      isAnnual: false,
-      startDate: '2026-07-15',
-      endDate: '2026-12-10',
-      startTime: '18:00',
-      endTime: '21:00',
-      preEnrollmentDate: '2026-07-01',
-      days: ['Martes', 'Jueves'],
-      maxAbsences: 4,
-      statusId: STATUSES.ACTIVO,
-      description: 'Desarrollo de sitios y aplicaciones web con HTML, CSS, JavaScript y fundamentos de backend.',
-      quota: 22,
-      hourQuantity: 160,
-      classesQuantity: 36,
-    },
-    {
-      name: 'Electricista Matriculado',
-      family: 'Oficios',
-      isAnnual: true,
-      startDate: '2026-03-16',
-      endDate: '2026-12-14',
-      startTime: '17:30',
-      endTime: '20:45',
-      preEnrollmentDate: '2026-02-15',
-      days: ['Lunes', 'Miércoles', 'Viernes'],
-      maxAbsences: 5,
-      statusId: STATUSES.ACTIVO,
-      description: 'Instalaciones eléctricas domiciliarias y comerciales, tableros, puesta a tierra y normativa AEA.',
-      quota: 20,
-      hourQuantity: 250,
-      classesQuantity: 60,
-    },
-    {
-      name: 'Diseño Gráfico Digital',
-      family: 'Tecnología',
-      isAnnual: false,
-      startDate: '2026-07-15',
-      endDate: '2026-12-10',
-      startTime: '18:00',
-      endTime: '21:00',
-      preEnrollmentDate: '2026-07-01',
-      days: ['Lunes', 'Miércoles'],
-      maxAbsences: 4,
-      statusId: STATUSES.ACTIVO,
-      description: 'Herramientas de diseño visual, composición, tipografía y piezas para medios digitales e impresos.',
-      quota: 20,
-      hourQuantity: 120,
-      classesQuantity: 32,
-      sponsorName: 'TecPlata',
-    },
-    {
-      name: 'Impresión 3D',
-      family: 'Tecnología',
-      isAnnual: false,
-      startDate: '2026-07-20',
-      endDate: '2026-12-15',
-      startTime: '17:30',
-      endTime: '20:30',
-      preEnrollmentDate: '2026-07-05',
-      days: ['Martes', 'Jueves'],
-      maxAbsences: 4,
-      statusId: STATUSES.ACTIVO,
-      description: 'Fabricación aditiva, modelado CAD, laminado y post-procesamiento de piezas.',
-      quota: 20,
-      hourQuantity: 100,
-      classesQuantity: 28,
-      sponsorName: 'TecPlata',
-    },
-    {
-      name: 'Limpieza Institucional',
-      family: 'Servicios',
-      isAnnual: false,
-      startDate: '2026-07-10',
-      endDate: '2026-11-30',
-      startTime: '14:00',
-      endTime: '17:00',
-      preEnrollmentDate: '2026-06-25',
-      days: ['Lunes', 'Miércoles'],
-      maxAbsences: 3,
-      statusId: STATUSES.ACTIVO,
-      description: 'Protocolos de higiene, sanitización y manejo de productos químicos en instituciones.',
-      quota: 30,
-      hourQuantity: 90,
-      classesQuantity: 24,
-    },
-    {
-      name: 'Logística Portuaria',
-      family: 'Administración',
-      isAnnual: false,
-      startDate: '2026-03-05',
-      endDate: '2026-07-02',
-      startTime: '18:00',
-      endTime: '21:00',
-      preEnrollmentDate: '2026-02-10',
-      days: ['Lunes', 'Miércoles'],
-      maxAbsences: 4,
-      statusId: STATUSES.EGRESADO,
-      description: 'Operativa de comercio exterior, contenedores, aduana y cadena de suministro portuaria.',
-      quota: 30,
-      hourQuantity: 140,
-      classesQuantity: 36,
-      sponsorName: 'TecPlata',
-    },
-    {
-      name: 'Soldador',
-      family: 'Oficios',
-      isAnnual: true,
-      startDate: '2026-03-16',
-      endDate: '2026-12-14',
-      startTime: '17:30',
-      endTime: '20:45',
-      preEnrollmentDate: '2026-02-15',
-      days: ['Lunes', 'Miércoles', 'Viernes'],
-      maxAbsences: 5,
-      statusId: STATUSES.ACTIVO,
-      description: 'Soldadura eléctrica por arco, oxicorte y preparación de superficies en aceros de bajo carbono.',
-      quota: 25,
-      hourQuantity: 250,
-      classesQuantity: 60,
-      sponsorName: 'UOCRA',
-    },
-    {
-      name: 'Operador de Marketing Digital',
-      family: 'Emprendimiento',
-      isAnnual: false,
-      startDate: '2026-07-18',
-      endDate: '2026-12-05',
-      startTime: '18:00',
-      endTime: '21:00',
-      preEnrollmentDate: '2026-07-03',
-      days: ['Martes', 'Jueves'],
-      maxAbsences: 4,
-      statusId: STATUSES.ACTIVO,
-      description: 'Campañas digitales, redes sociales, métricas y estrategias de comercialización para pymes.',
-      quota: 24,
-      hourQuantity: 110,
-      classesQuantity: 28,
-    },
-    {
-      name: 'Mecánico de Motos',
-      family: 'Oficios',
-      isAnnual: true,
-      startDate: '2026-03-09',
-      endDate: '2026-12-11',
-      startTime: '17:00',
-      endTime: '20:00',
-      preEnrollmentDate: '2026-02-20',
-      days: ['Lunes', 'Miércoles', 'Viernes'],
-      maxAbsences: 5,
-      statusId: STATUSES.ACTIVO,
-      description: 'Mantenimiento, diagnóstico y reparación de motocicletas de dos tiempos y cuatro tiempos, sistemas de inyección y carburación.',
-      quota: 20,
-      hourQuantity: 220,
-      classesQuantity: 55,
-    },
-    {
-      name: 'Herrero',
-      family: 'Oficios',
-      isAnnual: true,
-      startDate: '2026-03-16',
-      endDate: '2026-12-14',
-      startTime: '16:00',
-      endTime: '19:00',
-      preEnrollmentDate: '2026-02-20',
-      days: ['Martes', 'Jueves'],
-      maxAbsences: 4,
-      statusId: STATUSES.ACTIVO,
-      description: 'Forjado, doblado, corte y unión de piezas metálicas. Rejas, portones, escaleras y estructuras ornamentales con técnicas de herrería artesanal e industrial.',
-      quota: 18,
-      hourQuantity: 180,
-      classesQuantity: 45,
-    },
-    {
-      name: 'Habilidades para Aprender',
-      family: 'Educación',
-      isAnnual: false,
-      startDate: '2026-07-14',
-      endDate: '2026-11-28',
-      startTime: '09:00',
-      endTime: '12:00',
-      preEnrollmentDate: '2026-06-30',
-      days: ['Lunes', 'Miércoles'],
-      maxAbsences: 3,
-      statusId: STATUSES.ACTIVO,
-      description: 'Técnicas de estudio, gestión del tiempo, comprensión lectora y estrategias cognitivas para mejorar el desempeño en contextos educativos y laborales.',
-      quota: 30,
-      hourQuantity: 80,
-      classesQuantity: 20,
-    },
-    {
-      name: 'Cañista Montador',
-      family: 'Construcción',
-      isAnnual: false,
-      startDate: '2026-07-07',
-      endDate: '2026-12-05',
-      startTime: '08:00',
-      endTime: '12:00',
-      preEnrollmentDate: '2026-06-20',
-      days: ['Lunes', 'Martes', 'Jueves'],
-      maxAbsences: 5,
-      statusId: STATUSES.ACTIVO,
-      description: 'Instalación de sistemas de cañerías de agua fría, caliente y gas. Lectura de planos, uniones, sellos y normativa vigente de instalaciones sanitarias.',
-      quota: 18,
-      hourQuantity: 200,
-      classesQuantity: 50,
-    },
-    {
-      name: 'Prototipado de Videojuegos',
-      family: 'Tecnología',
-      isAnnual: false,
-      startDate: '2026-07-21',
-      endDate: '2026-12-18',
-      startTime: '18:00',
-      endTime: '21:00',
-      preEnrollmentDate: '2026-07-07',
-      days: ['Martes', 'Jueves'],
-      maxAbsences: 4,
-      statusId: STATUSES.ACTIVO,
-      description: 'Diseño y desarrollo de videojuegos 2D/3D con motores como Unity o Godot. Mecánicas de juego, narrativa interactiva, exportación y testeo de prototipos.',
-      quota: 22,
-      hourQuantity: 130,
-      classesQuantity: 34,
-      sponsorName: 'TecPlata',
-    },
-    {
-      name: 'Armador y Montador de Paneles y Cielorrasos de Placas de Roca de Yeso',
-      family: 'Construcción',
-      isAnnual: false,
-      startDate: '2026-07-13',
-      endDate: '2026-11-30',
-      startTime: '14:00',
-      endTime: '18:00',
-      preEnrollmentDate: '2026-06-27',
-      days: ['Lunes', 'Miércoles', 'Viernes'],
-      maxAbsences: 4,
-      statusId: STATUSES.ACTIVO,
-      description: 'Montaje de estructuras de acero galvanizado y placas de yeso para tabiques divisores, cielorrasos y revestimientos. Acabado y terminaciones.',
-      quota: 20,
-      hourQuantity: 160,
-      classesQuantity: 40,
-    },
-    {
-      name: 'Desarrollador de Apps Móviles',
-      family: 'Tecnología',
-      isAnnual: false,
-      startDate: '2026-07-16',
-      endDate: '2026-12-11',
-      startTime: '18:00',
-      endTime: '21:00',
-      preEnrollmentDate: '2026-07-02',
-      days: ['Lunes', 'Miércoles'],
-      maxAbsences: 4,
-      statusId: STATUSES.ACTIVO,
-      description: 'Desarrollo de aplicaciones móviles para Android e iOS con React Native o Flutter. Diseño de interfaces, consumo de APIs y publicación en tiendas de aplicaciones.',
-      quota: 22,
-      hourQuantity: 150,
-      classesQuantity: 38,
-      sponsorName: 'TecPlata',
-    },
+  let courseInstructor = await prisma.user.findFirst({ where: { email: PLACEHOLDER_INSTRUCTOR_EMAIL } })
+  if (!courseInstructor) {
+    courseInstructor = await prisma.user.create({
+      data: {
+        firstName: 'Sin',
+        lastName: 'asignar',
+        email: PLACEHOLDER_INSTRUCTOR_EMAIL,
+        statusId: STATUSES.ACTIVO,
+        roleId: ROLES.INSTRUCTOR,
+      },
+    })
+    console.log('✅ Instructor sin asignar creado')
+  }
+
+  const COURSES_SEED = CURSOS_WEB_2026
+  const SPONSORS_SEED = [
+    { name: 'TecPlata', description: 'Terminal portuaria TecPlata' },
+    { name: 'UOCRA', description: 'Unión Obrera de la Construcción de la República Argentina' },
   ]
+  const sponsorByName = new Map()
+  for (const item of SPONSORS_SEED) {
+    let sponsor = await prisma.sponsor.findFirst({ where: { name: item.name } })
+    if (!sponsor) {
+      sponsor = await prisma.sponsor.create({ data: item })
+      console.log(`✅ Sponsor creado: ${item.name}`)
+    } else {
+      console.log(`ℹ️ Sponsor ya existe: ${item.name}`)
+    }
+    sponsorByName.set(item.name, sponsor)
+  }
 
   const courseMap = {}
   for (const item of COURSES_SEED) {
@@ -548,15 +325,15 @@ async function main() {
     const courseData = {
       name: item.name,
       statusId: item.statusId,
-      instructorId: defaultInstructor.id,
+      instructorId: courseInstructor.id,
       familyId: familyByName[item.family],
       maxAbsences: item.maxAbsences,
       isAnnual: item.isAnnual,
-      startDate: new Date(item.startDate),
-      endDate: new Date(item.endDate),
+      startDate: new Date(`${item.startDate}T12:00:00.000Z`),
+      endDate: new Date(`${item.endDate}T12:00:00.000Z`),
       startTime: item.startTime,
       endTime: item.endTime,
-      preEnrollmentDate: new Date(item.preEnrollmentDate),
+      preEnrollmentDate: new Date(`${item.preEnrollmentDate}T12:00:00.000Z`),
     }
 
     if (!course) {
@@ -577,9 +354,8 @@ async function main() {
         quota: item.quota,
         hourQuantity: item.hourQuantity,
         classesQuantity: item.classesQuantity,
-        titleRequired: false,
+        titleRequired: Boolean(item.titleRequired),
         endorsementBy: 'Ministerio de Educación y Trabajo de la Provincia de Buenos Aires',
-        sponsorName: item.sponsorName || null,
       },
       create: {
         courseId: course.id,
@@ -587,11 +363,23 @@ async function main() {
         quota: item.quota,
         hourQuantity: item.hourQuantity,
         classesQuantity: item.classesQuantity,
-        titleRequired: false,
+        titleRequired: Boolean(item.titleRequired),
         endorsementBy: 'Ministerio de Educación y Trabajo de la Provincia de Buenos Aires',
-        sponsorName: item.sponsorName || null,
       },
     })
+
+    await prisma.courseSponsor.deleteMany({ where: { courseId: course.id } })
+    for (const sponsorName of item.sponsorNames || []) {
+      const sponsor = sponsorByName.get(sponsorName)
+        || await prisma.sponsor.findFirst({ where: { name: sponsorName } })
+      if (!sponsor) {
+        console.warn(`⚠️ Sponsor no precargado "${sponsorName}" para el curso ${item.name}`)
+        continue
+      }
+      await prisma.courseSponsor.create({
+        data: { courseId: course.id, sponsorId: sponsor.id },
+      })
+    }
 
     await prisma.courseDay.deleteMany({ where: { courseId: course.id } })
     for (const dayName of item.days) {
@@ -603,6 +391,17 @@ async function main() {
     }
 
     courseMap[item.name] = course
+  }
+
+  for (const legacyName of LEGACY_COURSE_NAMES) {
+    if (COURSES_SEED.some((item) => item.name === legacyName)) continue
+    const legacy = await prisma.course.findFirst({ where: { name: legacyName } })
+    if (!legacy || legacy.statusId === STATUSES.INACTIVO) continue
+    await prisma.course.update({
+      where: { id: legacy.id },
+      data: { statusId: STATUSES.INACTIVO },
+    })
+    console.log(`⏸️ Curso de prueba pasado a inactivo: ${legacyName}`)
   }
 
   for (const s of MOCK_STUDENTS_SEED) {
@@ -772,11 +571,50 @@ async function main() {
     console.log(`ℹ️ Director de prueba ya existe: ${directorEmail}`)
   }
 
+  const contralorEmail = 'contralor.test@cfl404.edu.ar'
+  const contralorExists = await prisma.user.findUnique({ where: { email: contralorEmail } })
+  if (!contralorExists) {
+    const contralor = await prisma.user.create({
+      data: {
+        firstName: 'Roberto',
+        lastName: 'Contralor',
+        email: contralorEmail,
+        dni: '28444555',
+        statusId: STATUSES.ACTIVO,
+        roleId: ROLES.CONTRALOR,
+        googleId: 'google-contralor-fallback-id',
+        profilePhotoUrl: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=150',
+        acceptedTerms: true,
+        userDetail: {
+          create: {
+            address: 'Sede Central CFL 404, Berisso',
+            phone: '221-555-0505',
+            gender: 'Masculino',
+            nacionality: 'Argentina',
+          },
+        },
+      },
+    })
+    console.log(`✅ Contralor de prueba creado: ${contralor.firstName} ${contralor.lastName} (${contralor.email})`)
+  } else {
+    console.log(`ℹ️ Contralor de prueba ya existe: ${contralorEmail}`)
+  }
+
+  console.log('🎫 Generando tokens de asistencia para alumnos activos...')
+  const activeStudents = await prisma.user.findMany({
+    where: { role: { name: 'alumno' }, status: { name: 'activo' } },
+    select: { id: true },
+  })
+  for (const student of activeStudents) {
+    await ensureAttendanceToken(student.id)
+  }
+  console.log(`✅ Tokens de asistencia verificados para ${activeStudents.length} alumnos.`)
+
   // ── Seeder de Cuotas de Cooperadora ─────────────────────────────────────
   console.log('💳 Poblando cuotas de Cooperadora...')
   const currentYear = new Date().getFullYear()
   const seededStudents = await prisma.user.findMany({
-    where: { role: { name: 'ALUMNO' } },
+    where: { role: { name: 'alumno' } },
     take: 6,
   })
 

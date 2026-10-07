@@ -18,7 +18,7 @@ describe('auditoría de seguridad CFL 404', () => {
     director = await tokenForEmail('directivo.test@cfl404.edu.ar')
     instructor = await tokenForEmail('docente.test@cfl404.edu.ar')
     studentRow = await prisma.user.findFirst({
-      where: { role: { name: { in: ['ALUMNO', 'POSTULANTE'] } } },
+      where: { role: { name: { in: ['alumno', 'postulante'] } } },
       select: { id: true },
     })
   })
@@ -148,6 +148,11 @@ describe('ola 1 — altas', () => {
   test('H-12 GET /attendance no es público', async () => {
     const res = await jsonRequest(ctx.base, '/attendance')
     assert.ok(res.status === 401 || res.status === 404)
+  })
+
+  test('H-12 GET /api/attendance/courses no es público', async () => {
+    const res = await jsonRequest(ctx.base, '/api/attendance/courses')
+    assert.equal(res.status, 401)
   })
 
   test('H-14 INSTRUCTOR no puede cambiar DNI por PATCH /me', async () => {

@@ -5,7 +5,7 @@ import { getKpis, getAllSettings, updateSetting, deleteSetting } from '../contro
 const SettingsRouter = Router()
 
 // Roles con acceso a la configuración del sistema
-const CONFIG_ROLES = ['GOD', 'DIRECTOR', 'REGENTE', 'DIRECTIVO']
+const CONFIG_ROLES = ['god', 'director', 'regente', 'directivo']
 
 // Público: solo claves kpi_* (textos institucionales).
 SettingsRouter.get('/api/settings/kpis', getKpis)

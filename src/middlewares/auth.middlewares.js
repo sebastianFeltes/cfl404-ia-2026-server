@@ -1,42 +1,43 @@
 import prisma from '../lib/prisma.js'
 import { ACCESS_COOKIE, verifyAccessToken } from '../lib/auth-tokens.js'
+import { canAccessQrScanner } from '../lib/qr-scanner-access.js'
 
 /**
  * Normaliza sinónimos pero no colapsa roles distintos
- * (SECRETARIA ≠ DIRECTOR, necesario para permisos de Instructores).
+ * (secretaria ≠ director, necesario para permisos de Instructores).
  *
- * Roles válidos: GOD · ADMIN · DIRECTOR · REGENTE · SECRETARIA · PRECEPTORIA
- *                INSTRUCTOR · ALUMNO · POSTULANTE
+ * Roles válidos: god · admin · director · regente · secretaria · preceptoria
+ *                instructor · alumno · postulante · contralor
  */
 const normalizeRole = (role) => {
     if (!role) return ''
-    const r = role.toString().trim().toUpperCase()
-    if (['DIOS', 'SUPERADMIN', 'ROOT'].includes(r)) return 'GOD'
-    if (r === 'ADMINISTRADOR') return 'ADMIN'
-    if (r === 'DIRECTIVO') return 'DIRECTOR'
-    if (r === 'SECRETARÍA') return 'SECRETARIA'
-    if (r === 'PRECEPTOR') return 'PRECEPTORIA'
-    if (['PROFESOR', 'TEACHER', 'DOCENTE'].includes(r)) return 'INSTRUCTOR'
-    if (['STUDENT', 'ESTUDIANTE'].includes(r)) return 'ALUMNO'
-    if (r === 'ASPIRANTE') return 'POSTULANTE'
+    const r = role.toString().trim().toLowerCase()
+    if (['dios', 'superadmin', 'root'].includes(r)) return 'god'
+    if (r === 'administrador') return 'admin'
+    if (r === 'directivo') return 'director'
+    if (r === 'secretaría') return 'secretaria'
+    if (r === 'preceptor') return 'preceptoria'
+    if (['profesor', 'profesores', 'teacher', 'teachers', 'docente', 'docentes'].includes(r)) return 'instructor'
+    if (['student', 'students', 'estudiante', 'estudiantes', 'alumnos'].includes(r)) return 'alumno'
+    if (['aspirante', 'aspirantes', 'postulantes'].includes(r)) return 'postulante'
     return r
 }
 
-/** Equivalencias para rutas viejas que piden DIRECTIVO / DOCENTE / ESTUDIANTE */
+/** Equivalencias para rutas viejas que piden directivo / docente / estudiante */
 const ROLE_EQUIVALENTS = {
-    DIRECTOR: ['DIRECTOR', 'DIRECTIVO', 'REGENTE'],
-    DIRECTIVO: ['DIRECTIVO', 'DIRECTOR', 'REGENTE'],
-    REGENTE: ['REGENTE', 'DIRECTOR', 'DIRECTIVO'],
-    DOCENTE: ['DOCENTE', 'INSTRUCTOR'],
-    INSTRUCTOR: ['INSTRUCTOR', 'DOCENTE'],
-    ESTUDIANTE: ['ESTUDIANTE', 'ALUMNO', 'POSTULANTE', 'ASPIRANTE'],
-    ALUMNO: ['ALUMNO', 'ESTUDIANTE'],
-    POSTULANTE: ['POSTULANTE', 'ASPIRANTE', 'ESTUDIANTE'],
-    ADMIN: ['ADMIN', 'ADMINISTRADOR'],
-    GOD: ['GOD', 'DIOS', 'SUPERADMIN', 'ROOT'],
+    director: ['director', 'directivo', 'regente'],
+    directivo: ['directivo', 'director', 'regente'],
+    regente: ['regente', 'director', 'directivo'],
+    docente: ['docente', 'instructor'],
+    instructor: ['instructor', 'docente'],
+    estudiante: ['estudiante', 'alumno', 'postulante', 'aspirante'],
+    alumno: ['alumno', 'estudiante'],
+    postulante: ['postulante', 'aspirante', 'estudiante'],
+    admin: ['admin', 'administrador'],
+    god: ['god', 'dios', 'superadmin', 'root'],
 }
 
-const STUDENT_ROLES = new Set(['ALUMNO', 'POSTULANTE'])
+const STUDENT_ROLES = new Set(['alumno', 'postulante'])
 
 const roleIsAllowed = (userRole, allowedRoles) => {
     if (allowedRoles.includes(userRole)) return true
@@ -103,9 +104,9 @@ async function loadActiveUserFromToken(token) {
 }
 
 function statusAllowsAccess(user, req) {
-    const statusName = user.status?.name
-    if (statusName === 'ACTIVO') return true
-    const isPendingPostulant = normalizeRole(user.role?.name) === 'POSTULANTE' && statusName === 'PENDIENTE'
+    const statusName = String(user.status?.name || '').toLowerCase()
+    if (statusName === 'activo') return true
+    const isPendingPostulant = normalizeRole(user.role?.name) === 'postulante' && statusName === 'pendiente'
     return isPendingPostulant && isAuthMeRoute(req)
 }
 
@@ -169,7 +170,7 @@ export const optionalAuth = async (req, res, next) => {
 
 /**
  * Middleware: Verifica que el usuario autenticado posea al menos uno de los roles permitidos.
- * Solo GOD bypasea la lista. ADMIN no es equivalente a GOD.
+ * Solo god bypasea la lista. admin no es equivalente a god.
  * Debe usarse DESPUÉS de authenticateToken.
  */
 export const authorizeRoles = (...allowedRoles) => {
@@ -186,7 +187,7 @@ export const authorizeRoles = (...allowedRoles) => {
 
         const userRole = normalizeRole(req.user.role)
 
-        if (userRole === 'GOD') {
+        if (userRole === 'god') {
             return next()
         }
 
@@ -203,42 +204,59 @@ export const authorizeRoles = (...allowedRoles) => {
 }
 
 /** Roles con CRUD completo (Instructores y secciones administrativas) */
-export const CRUD_ROLES_SERVER = ['GOD', 'ADMIN', 'DIRECTOR', 'REGENTE', 'DIRECTIVO']
+export const CRUD_ROLES_SERVER = ['god', 'admin', 'director', 'regente', 'directivo']
 
 /** Roles con solo lectura */
-export const READ_ONLY_ROLES_SERVER = ['SECRETARIA', 'PRECEPTORIA']
+export const READ_ONLY_ROLES_SERVER = ['secretaria', 'preceptoria']
 
-/** Personal de gestión (sin INSTRUCTOR ni alumnos) */
+/** Personal de gestión (sin instructor ni alumnos) */
 export const ACCESS_ROLES_SERVER = [...CRUD_ROLES_SERVER, ...READ_ONLY_ROLES_SERVER]
 
 /**
  * Middleware: Exclusivo para Administradores y roles con CRUD completo
  */
 export const requireAdmin = authorizeRoles(
-    'GOD', 'ADMIN', 'DIRECTOR', 'REGENTE', 'DIRECTIVO',
+    'god', 'admin', 'director', 'regente', 'directivo',
 )
 
 /**
  * Middleware: Personal de gestión (lectura de alumnos, instructores, etc.)
  */
 export const requireStaff = authorizeRoles(
-    'GOD', 'ADMIN', 'DIRECTOR', 'REGENTE', 'DIRECTIVO',
-    'SECRETARIA', 'PRECEPTORIA',
+    'god', 'admin', 'director', 'regente', 'directivo',
+    'secretaria', 'preceptoria',
 )
 
 /**
  * Middleware: Exclusivo para Docentes / Instructores (y roles superiores)
  */
 export const requireDocente = authorizeRoles(
-    'INSTRUCTOR', 'GOD', 'ADMIN', 'DIRECTOR', 'REGENTE', 'DIRECTIVO',
+    'instructor', 'god', 'admin', 'director', 'regente', 'directivo',
 )
 
 /**
  * Middleware: Exclusivo para Alumnos (o Admins para gestión/supervisión)
  */
 export const requireEstudiante = authorizeRoles(
-    'ALUMNO', 'POSTULANTE', 'GOD', 'ADMIN', 'DIRECTOR', 'REGENTE', 'DIRECTIVO',
+    'alumno', 'postulante', 'god', 'admin', 'director', 'regente', 'directivo',
 )
+
+/**
+ * Middleware: Lector QR de asistencia (contralor, god o emails autorizados)
+ */
+export const requireQrScanner = (req, res, next) => {
+    if (!req.user) {
+        return res.status(401).json({ error: 'Acceso no autorizado' })
+    }
+
+    if (canAccessQrScanner({ role: req.user.role, email: req.user.email })) {
+        return next()
+    }
+
+    return res.status(403).json({
+        error: 'Acceso denegado: Se requiere rol contralor o autorización para el lector QR',
+    })
+}
 
 /**
  * Middleware: Permite el acceso únicamente si el recurso consultado pertenece al propio usuario

@@ -24,7 +24,7 @@ export async function tokenForEmail(email) {
     include: { role: true, status: true },
   })
   if (!user) throw new Error(`No hay usuario seed ${email}`)
-  const type = ['ALUMNO', 'POSTULANTE'].includes(user.role.name) ? 'STUDENT' : 'STAFF'
+  const type = ['alumno', 'postulante'].includes(String(user.role.name || '').toLowerCase()) ? 'STUDENT' : 'STAFF'
   return { token: signAccessToken(user, type), user }
 }
 

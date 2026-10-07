@@ -127,7 +127,7 @@ export const MOCK_STUDENTS_SEED = [
 export async function autoSeedDatabase() {
   try {
     // 1. Asegurar roles
-    const roles = ['Director', 'Secretaría', 'Instructor', 'Alumno', 'Aspirante']
+    const roles = ['director', 'secretaria', 'instructor', 'alumno', 'postulante']
     for (const name of roles) {
       const exists = await prisma.role.findFirst({ where: { name } })
       if (!exists) {
@@ -135,14 +135,14 @@ export async function autoSeedDatabase() {
       }
     }
 
-    const defaultRole = await prisma.role.findFirst({ where: { name: 'Alumno' } })
-    const aspiranteRole = await prisma.role.findFirst({ where: { name: 'Aspirante' } })
+    const defaultRole = await prisma.role.findFirst({ where: { name: 'alumno' } })
+    const aspiranteRole = await prisma.role.findFirst({ where: { name: 'postulante' } })
 
     if (!defaultRole) return
 
     // 2. Poblar estudiantes si hay menos de 5
     const count = await prisma.user.count({
-      where: { role: { name: { in: ['Alumno', 'ALUMNO', 'Aspirante', 'POSTULANTE'] } } }
+      where: { role: { name: { in: ['alumno', 'postulante'] } } }
     })
     if (count < 5) {
       console.log('Inicializando nómina inicial de alumnos en SQLite...')

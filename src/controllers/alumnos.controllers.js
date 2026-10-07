@@ -3,23 +3,24 @@ import prisma from '../lib/prisma.js'
 import { parsePagination } from '../lib/pagination.js'
 import { assertAllowedPhotoUrl } from '../lib/photo-url.js'
 import { parseAcceptedTerms } from '../lib/accepted-terms.js'
+import { ensureAttendanceToken, buildAttendanceTokenFromUserId } from '../lib/attendance-token.js'
 
 const STATUS_MAP = {
-  1: 'Activo',
-  2: 'Inactivo',
-  3: 'Pendiente',
-  4: 'Egresado',
+  1: 'activo',
+  2: 'inactivo',
+  3: 'pendiente',
+  4: 'egresado',
 }
 
 const STATUS_TO_ID = {
-  Activo: 1,
-  Inactivo: 2,
-  Pendiente: 3,
-  Egresado: 4,
+  activo: 1,
+  inactivo: 2,
+  pendiente: 3,
+  egresado: 4,
 }
 
 const VALID_STATUS_IDS = new Set([1, 2, 3, 4])
-const STUDENT_ROLE_NAMES = ['ALUMNO', 'POSTULANTE']
+const STUDENT_ROLE_NAMES = ['alumno', 'postulante']
 const STAFF_ROLE_IDS = new Set([1, 2, 3, 4, 5, 6, 7])
 const STATUS_INACTIVO = 2
 
@@ -47,17 +48,15 @@ async function findStudentById(id) {
 }
 
 function resolveStudentRoleName(roleName) {
-  if (!roleName) return 'ALUMNO'
-  const normalized = String(roleName).trim().toUpperCase()
-  if (['POSTULANTE', 'ASPIRANTE', 'POSTULANTE'].includes(normalized) || normalized === 'POSTULANTE') {
-    return 'POSTULANTE'
+  if (!roleName) return 'alumno'
+  const normalized = String(roleName).trim().toLowerCase()
+  if (['postulante', 'aspirante', 'aspirantes', 'postulantes'].includes(normalized)) {
+    return 'postulante'
   }
-  if (normalized === 'ALUMNO' || normalized === 'ESTUDIANTE' || normalized === 'ALUMNO') {
-    return 'ALUMNO'
+  if (['alumno', 'estudiante', 'estudiantes', 'student', 'students', 'alumnos'].includes(normalized)) {
+    return 'alumno'
   }
-  if (roleName === 'Aspirante' || roleName === 'Postulante') return 'POSTULANTE'
-  if (roleName === 'Alumno') return 'ALUMNO'
-  const error = new Error('El rol del alumno solo puede ser ALUMNO o POSTULANTE')
+  const error = new Error('El rol del alumno solo puede ser alumno o postulante')
   error.statusCode = 400
   throw error
 }
@@ -91,8 +90,9 @@ function formatStudent(s) {
   const primaryUserCourse = s.userCourses?.[0]
   const courseObj = primaryUserCourse?.course
   const activeCourse = courseObj?.name || 'Sin curso asignado'
-  const statusText = STATUS_MAP[s.statusId] || s.status?.name || 'Activo'
-  const isAspirante = s.statusId === 3 || s.role?.name === 'POSTULANTE'
+  const statusText = STATUS_MAP[s.statusId] || String(s.status?.name || 'activo').toLowerCase()
+  const roleName = String(s.role?.name || '').toLowerCase()
+  const isAspirante = s.statusId === 3 || roleName === 'postulante'
 
   const instructorName = courseObj?.instructor
     ? `Prof. ${courseObj.instructor.firstName} ${courseObj.instructor.lastName}`.trim()
@@ -132,9 +132,9 @@ function formatStudent(s) {
     status: statusText,
     is_present: s.statusId === 1,
     is_aspirante: isAspirante,
-    role_name: s.role?.name || (isAspirante ? 'POSTULANTE' : 'ALUMNO'),
+    role_name: roleName || (isAspirante ? 'postulante' : 'alumno'),
+    attendance_token: s.attendanceToken || (roleName === 'alumno' && s.id ? buildAttendanceTokenFromUserId(s.id) : null),
     profile_photo_url: s.profilePhotoUrl,
-    attendance_token: s.attendanceToken || (s.id ? `CFL404-ATT-${s.id}` : null),
     accepted_terms: Boolean(s.acceptedTerms),
     acceptedTerms: Boolean(s.acceptedTerms),
     dni_copy: true,
@@ -259,8 +259,8 @@ export const createAlumno = async (req, res, next) => {
     if (status_id) {
       finalStatusId = status_id
     } else if (status) {
-      finalStatusId = STATUS_TO_ID[status] || 1
-    } else if (targetRoleName === 'POSTULANTE') {
+      finalStatusId = STATUS_TO_ID[String(status).toLowerCase()] || 1
+    } else if (targetRoleName === 'postulante') {
       finalStatusId = 3
     }
 
@@ -314,7 +314,16 @@ export const createAlumno = async (req, res, next) => {
       }
     }
 
-    const isAspirante = newStudent.statusId === 3 || targetRoleName === 'POSTULANTE'
+    const isAspirante = newStudent.statusId === 3 || targetRoleName === 'postulante'
+
+    let attendanceToken = null
+    if (targetRoleName === 'alumno') {
+      attendanceToken = attendance_token || buildAttendanceTokenFromUserId(newStudent.id)
+      await prisma.user.update({
+        where: { id: newStudent.id },
+        data: { attendanceToken },
+      })
+    }
 
     return res.status(201).json({
       status: 'success',
@@ -332,12 +341,12 @@ export const createAlumno = async (req, res, next) => {
         course: selectedCourseName || 'Sin curso asignado',
         enrollment_date: new Date(newStudent.createdAt).toLocaleDateString('es-AR'),
         status_id: newStudent.statusId,
-        status: STATUS_MAP[newStudent.statusId] || 'Activo',
+        status: STATUS_MAP[newStudent.statusId] || 'activo',
         is_present: newStudent.statusId === 1,
         is_aspirante: isAspirante,
         role_name: targetRoleName,
+        attendance_token: attendanceToken || newStudent.attendanceToken || null,
         profile_photo_url: newStudent.profilePhotoUrl,
-        attendance_token: newStudent.attendanceToken || null,
         accepted_terms: Boolean(newStudent.acceptedTerms),
         acceptedTerms: Boolean(newStudent.acceptedTerms),
         dni_copy: true,
@@ -404,7 +413,7 @@ export const updateAlumno = async (req, res, next) => {
     if (status_id !== undefined) {
       finalStatusId = status_id
     } else if (status) {
-      finalStatusId = STATUS_TO_ID[status]
+      finalStatusId = STATUS_TO_ID[String(status).toLowerCase()]
     }
 
     const parsedTerms = parseAcceptedTerms(accepted_terms ?? acceptedTerms)
@@ -430,7 +439,9 @@ export const updateAlumno = async (req, res, next) => {
         ...(finalStatusId !== undefined && { statusId: finalStatusId }),
         ...(targetRoleId !== undefined && { roleId: targetRoleId }),
         ...(profile_photo_url !== undefined && { profilePhotoUrl: profile_photo_url }),
-        ...((attendance_token !== undefined ? { attendanceToken: attendance_token } : (!studentExists.attendanceToken ? { attendanceToken: `CFL404-ATT-${id}` } : {}))),
+        ...(attendance_token !== undefined
+          ? { attendanceToken: attendance_token }
+          : (!studentExists.attendanceToken ? { attendanceToken: buildAttendanceTokenFromUserId(id) } : {})),
         ...(parsedTerms !== undefined && { acceptedTerms: parsedTerms }),
         userDetail: {
           upsert: {
@@ -477,6 +488,13 @@ export const updateAlumno = async (req, res, next) => {
     }
 
     const refreshedStudent = await findStudentById(id)
+
+    const finalRoleName = String(updatedStudent.role?.name || '').toLowerCase()
+    const isAspirante = updatedStudent.statusId === 3 || finalRoleName === 'postulante'
+    let attendanceToken = null
+    if (finalRoleName === 'alumno') {
+      attendanceToken = await ensureAttendanceToken(updatedStudent.id)
+    }
 
     return res.status(200).json({
       status: 'success',

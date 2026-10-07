@@ -20,7 +20,7 @@ export async function getKpis(req, res, next) {
 
 /**
  * GET /api/v1/settings
- * Protegido (GOD / DIRECTOR / REGENTE): devuelve todos los settings.
+ * Protegido (god / director / regente): devuelve todos los settings.
  */
 export async function getAllSettings(req, res, next) {
   try {
@@ -36,7 +36,7 @@ export async function getAllSettings(req, res, next) {
 /**
  * POST  /api/v1/settings          → crea o actualiza (key en body)
  * PATCH /api/v1/settings/:key     → actualiza (key en params)
- * Protegido (GOD / DIRECTOR / REGENTE).
+ * Protegido (god / director / regente).
  */
 export async function updateSetting(req, res, next) {
   try {
@@ -73,7 +73,7 @@ export async function updateSetting(req, res, next) {
 
 /**
  * DELETE /api/v1/settings/:key
- * Protegido (GOD / DIRECTOR / REGENTE): elimina una clave de configuración.
+ * Protegido (god / director / regente): elimina una clave de configuración.
  */
 export async function deleteSetting(req, res, next) {
   try {

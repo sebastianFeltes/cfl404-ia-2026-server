@@ -1,4 +1,12 @@
 import prisma from '../lib/prisma.js'
+import { syncCourseSponsors } from '../lib/courseSponsors.js'
+
+const SPONSOR_INCLUDE = {
+  _count: { select: { courseSponsors: true } },
+  courseSponsors: {
+    select: { courseId: true },
+  },
+}
 
 /**
  * GET /api/v1/sponsors
@@ -8,12 +16,7 @@ export async function getSponsors(req, res, next) {
   try {
     const sponsors = await prisma.sponsor.findMany({
       orderBy: { name: 'asc' },
-      include: {
-        _count: { select: { courseDetails: true } },
-        courseDetails: {
-          select: { courseId: true },
-        },
-      },
+      include: SPONSOR_INCLUDE,
     })
     return res.json(sponsors)
   } catch (error) {
@@ -40,12 +43,7 @@ export async function createSponsor(req, res, next) {
         description: description ? String(description).trim() : null,
         logoUrl: logoUrl ? String(logoUrl) : null,
       },
-      include: {
-        _count: { select: { courseDetails: true } },
-        courseDetails: {
-          select: { courseId: true },
-        },
-      },
+      include: SPONSOR_INCLUDE,
     })
 
     return res.status(201).json(sponsor)
@@ -56,7 +54,9 @@ export async function createSponsor(req, res, next) {
 
 /**
  * PATCH /api/v1/sponsors/:id
- * Actualiza un patrocinador existente (edición parcial) y sincroniza datos en cursos vinculados.
+ * Actualiza un patrocinador existente (edición parcial).
+ * Los cursos lo referencian por la tabla course_sponsor, así que el nombre y el logo
+ * se leen siempre desde Sponsor.
  */
 export async function updateSponsor(req, res, next) {
   try {
@@ -76,24 +76,8 @@ export async function updateSponsor(req, res, next) {
     const sponsor = await prisma.sponsor.update({
       where: { id },
       data,
-      include: {
-        _count: { select: { courseDetails: true } },
-        courseDetails: {
-          select: { courseId: true },
-        },
-      },
+      include: SPONSOR_INCLUDE,
     })
-
-    // Sincronizar hacia los detalles de cursos que tienen asignado este sponsor
-    if (name !== undefined || logoUrl !== undefined) {
-      await prisma.courseDetail.updateMany({
-        where: { sponsorId: id },
-        data: {
-          ...(name !== undefined && { sponsorName: String(name).trim() }),
-          ...(logoUrl !== undefined && { sponsorLogo: logoUrl ? String(logoUrl) : null }),
-        },
-      })
-    }
 
     return res.json(sponsor)
   } catch (error) {
@@ -103,7 +87,7 @@ export async function updateSponsor(req, res, next) {
 
 /**
  * DELETE /api/v1/sponsors/:id
- * Elimina un patrocinador. Desvincula y limpia los registros de CourseDetail.
+ * Elimina un patrocinador. Las filas de course_sponsor se borran en cascada.
  */
 export async function deleteSponsor(req, res, next) {
   try {
@@ -114,16 +98,6 @@ export async function deleteSponsor(req, res, next) {
       return res.status(404).json({ error: 'Patrocinador no encontrado' })
     }
 
-    // Limpiar referencias en course_detail
-    await prisma.courseDetail.updateMany({
-      where: { sponsorId: id },
-      data: {
-        sponsorId: null,
-        sponsorName: null,
-        sponsorLogo: null,
-      },
-    })
-
     await prisma.sponsor.delete({ where: { id } })
     return res.json({ message: 'Patrocinador eliminado correctamente' })
   } catch (error) {
@@ -133,52 +107,36 @@ export async function deleteSponsor(req, res, next) {
 
 /**
  * PATCH /api/v1/courses/:courseId/sponsor
- * Asigna o desasigna un patrocinador a un curso (vía CourseDetail).
- * Body: { sponsorId: string | null }
+ * Reemplaza los patrocinadores de un curso por sponsors ya cargados.
+ * Body: { sponsorIds: string[] } o, en compatibilidad, { sponsorId: string | null }
  */
 export async function assignSponsorToCourse(req, res, next) {
   try {
     const { courseId } = req.params
-    const { sponsorId } = req.body
+    const { sponsorIds, sponsorId } = req.body
 
-    // Validar que el curso existe
-    const course = await prisma.course.findUnique({
-      where: { id: courseId },
-      include: { courseDetail: true },
-    })
+    const course = await prisma.course.findUnique({ where: { id: courseId } })
     if (!course) {
       return res.status(404).json({ error: 'Curso no encontrado' })
     }
 
-    // Validar que el sponsor existe si se provee
-    let sponsor = null
-    if (sponsorId) {
-      sponsor = await prisma.sponsor.findUnique({ where: { id: sponsorId } })
-      if (!sponsor) {
-        return res.status(404).json({ error: 'Patrocinador no encontrado' })
-      }
-    }
+    const ids = Array.isArray(sponsorIds)
+      ? sponsorIds
+      : sponsorId
+        ? [sponsorId]
+        : []
 
-    const updated = await prisma.courseDetail.upsert({
-      where: { courseId },
-      update: {
-        sponsorId: sponsorId || null,
-        sponsorName: sponsor ? sponsor.name : null,
-        sponsorLogo: sponsor ? sponsor.logoUrl : null,
-      },
-      create: {
-        courseId,
-        quota: 25,
-        hourQuantity: 120,
-        classesQuantity: 32,
-        sponsorId: sponsorId || null,
-        sponsorName: sponsor ? sponsor.name : null,
-        sponsorLogo: sponsor ? sponsor.logoUrl : null,
-      },
-      include: { sponsor: true },
+    await prisma.$transaction(async (tx) => {
+      await syncCourseSponsors(tx, courseId, ids)
     })
 
-    return res.json(updated)
+    const links = await prisma.courseSponsor.findMany({
+      where: { courseId },
+      include: { sponsor: true },
+      orderBy: { createdAt: 'asc' },
+    })
+
+    return res.json(links)
   } catch (error) {
     next(error)
   }

@@ -12,15 +12,16 @@ Fuente de verdad: `server/prisma/schema.prisma`. Personas viven en **una sola ta
 - Usar `User` + `UserDetail`. No existen `Student` ni `Staff`.
 - Tipo de persona = `roleId` / `role.name`, no una tabla aparte.
 - Estado = `statusId` / `status.name`. Incluir `status`; no mapear ids a mano.
+- Los `name` de `role` y `status` se guardan y comparan en minúscula; no reintroducir `GOD`/`ACTIVO`.
 
-Roles (id fijo): `GOD` 1, `ADMIN` 2, `DIRECTOR` 3, `REGENTE` 4, `SECRETARIA` 5, `PRECEPTORIA` 6, `INSTRUCTOR` 7, `ALUMNO` 8, `POSTULANTE` 9.
+Roles (id fijo): `god` 1, `admin` 2, `director` 3, `regente` 4, `secretaria` 5, `preceptoria` 6, `instructor` 7, `alumno` 8, `postulante` 9, `contralor` 10.
 
-Statuses (id fijo): `ACTIVO` 1, `INACTIVO` 2, `PENDIENTE` 3, `EGRESADO` 4.
+Statuses (id fijo): `activo` 1, `inactivo` 2, `pendiente` 3, `egresado` 4, `suspendido` 5, `bloqueado` 6, `eliminado` 7, `inscripcion_abierta` 8, `ultimos_cupos` 9, `cupo_completo` 10, `curso_finalizado` 11. Los últimos cuatro son estados de cursada; la tabla sigue siendo global.
 
 ## Cursos e inscripciones
 
 - Docente del curso: `Course.instructorId` → `User` (relación `instructor` / `instructedCourses`).
-- Inscripción de `ALUMNO` o `POSTULANTE`: `UserCourse` (`userId` + `courseId`).
+- Inscripción de `alumno` o `postulante`: `UserCourse` (`userId` + `courseId`).
 - Asistencia: `Attendance.userCourseId` → `UserCourse`.
 
 ```js
@@ -32,7 +33,7 @@ prisma.studentCourse.create({ data: { studentId } })
 
 // ✅ GOOD
 prisma.user.findMany({
-  where: { role: { name: 'ALUMNO' } },
+  where: { role: { name: 'alumno' } },
   include: { role: true, status: true, userDetail: true, userCourses: true },
 })
 prisma.course.findMany({ include: { instructor: true, status: true } })

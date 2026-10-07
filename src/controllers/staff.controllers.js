@@ -7,9 +7,9 @@ const ASSIGNABLE_STAFF_ROLE_IDS = new Set([3, 4, 5, 6, 7])
 const GOD_ASSIGNABLE_ROLE_IDS = new Set([1, 2, 3, 4, 5, 6, 7])
 
 function assertStaffRoleAssignment(actorRole, targetRoleId, existingRoleId) {
-  const actor = String(actorRole || '').toUpperCase()
+  const actor = String(actorRole || '').toLowerCase()
   const nextId = targetRoleId == null ? existingRoleId : targetRoleId
-  const allowed = actor === 'GOD' ? GOD_ASSIGNABLE_ROLE_IDS : ASSIGNABLE_STAFF_ROLE_IDS
+  const allowed = actor === 'god' ? GOD_ASSIGNABLE_ROLE_IDS : ASSIGNABLE_STAFF_ROLE_IDS
 
   if (targetRoleId != null && !allowed.has(Number(targetRoleId))) {
     const error = new Error('No tenés permiso para asignar ese rol')
@@ -17,7 +17,7 @@ function assertStaffRoleAssignment(actorRole, targetRoleId, existingRoleId) {
     throw error
   }
 
-  if (actor !== 'GOD' && existingRoleId != null && PRIVILEGED_ROLE_IDS.has(Number(existingRoleId))) {
+  if (actor !== 'god' && existingRoleId != null && PRIVILEGED_ROLE_IDS.has(Number(existingRoleId))) {
     const error = new Error('No tenés permiso para modificar este usuario')
     error.statusCode = 403
     throw error
@@ -50,7 +50,7 @@ function toClientShape(staff) {
     }
 }
 
-const STAFF_ROLE_NAMES = ['GOD', 'ADMIN', 'DIRECTOR', 'REGENTE', 'SECRETARIA', 'PRECEPTORIA', 'INSTRUCTOR']
+const STAFF_ROLE_NAMES = ['god', 'admin', 'director', 'regente', 'secretaria', 'preceptoria', 'instructor']
 
 /** Incluir relaciones necesarias en cada query de personal */
 const STAFF_INCLUDE = {
@@ -280,7 +280,7 @@ export const updateStaff = async (req, res, next) => {
                 // 2. Para cursos que antes estaban asignados a este instructor pero ya no:
                 const fallbackInstructor = await tx.user.findFirst({
                     where: {
-                        role: { name: { in: ['INSTRUCTOR', 'ADMIN', 'GOD', 'DIRECTOR'] } },
+                        role: { name: { in: ['instructor', 'admin', 'god', 'director'] } },
                         id: { not: id },
                     },
                 })
@@ -328,11 +328,12 @@ export const getAllRoles = async (req, res, next) => {
         const roles = await prisma.role.findMany({
             orderBy: { name: 'asc' },
         })
-        const actor = String(req.user?.role || '').toUpperCase()
+        const actor = String(req.user?.role || '').toLowerCase()
         const visible = roles.filter((role) => {
-            if (['ALUMNO', 'POSTULANTE'].includes(role.name)) return false
-            if (actor === 'GOD') return true
-            return !['GOD', 'ADMIN'].includes(role.name)
+            const name = String(role.name || '').toLowerCase()
+            if (['alumno', 'postulante'].includes(name)) return false
+            if (actor === 'god') return true
+            return !['god', 'admin'].includes(name)
         })
 
         res.json({

@@ -4,6 +4,11 @@ import { validateCourseStageDates } from '../lib/courseStage.js'
 const optionalDate = z.string().min(1).optional().nullable()
 const optionalTime = z.string().max(20).optional().nullable()
 const coerceInt = z.coerce.number().int()
+const COURSE_STATUS_IDS = [1, 2, 3, 4, 8, 9, 10, 11]
+const courseStatusId = coerceInt.refine(
+  (id) => COURSE_STATUS_IDS.includes(id),
+  { message: 'Estado de curso no válido' },
+)
 
 const courseDatesRefine = (data, ctx) => {
   if (!data.startDate && !data.endDate && data.isAnnual === undefined) return
@@ -42,7 +47,7 @@ export const createCourseSchema = z.object({
 
   classesQuantity: coerceInt.min(1, 'La cantidad de clases debe ser mayor a 0').optional(),
 
-  statusId: coerceInt.min(1).max(4).optional(),
+  statusId: courseStatusId.optional(),
 
   maxAbsences: coerceInt.min(0).optional(),
 
@@ -54,8 +59,7 @@ export const createCourseSchema = z.object({
   isAnnual: z.coerce.boolean().optional(),
   titleRequired: z.coerce.boolean().optional(),
   endorsementBy: z.string().max(200).optional().nullable(),
-  sponsorName: z.string().max(200).optional().nullable(),
-  sponsorLogo: z.string().max(2048).optional().nullable(),
+  sponsorIds: z.array(z.string().min(1)).max(20).optional(),
   dayIds: z.array(coerceInt).max(7).optional(),
 }).superRefine(courseDatesRefine)
 
@@ -70,7 +74,7 @@ export const updateCourseSchema = z.object({
   quota: coerceInt.min(1).optional(),
   hourQuantity: coerceInt.min(1).optional(),
   classesQuantity: coerceInt.min(1).optional(),
-  statusId: coerceInt.min(1).max(4).optional(),
+  statusId: courseStatusId.optional(),
   maxAbsences: coerceInt.min(0).optional(),
   startTime: optionalTime,
   endTime: optionalTime,
@@ -80,7 +84,6 @@ export const updateCourseSchema = z.object({
   isAnnual: z.coerce.boolean().optional(),
   titleRequired: z.coerce.boolean().optional(),
   endorsementBy: z.string().max(200).optional().nullable(),
-  sponsorName: z.string().max(200).optional().nullable(),
-  sponsorLogo: z.string().max(2048).optional().nullable(),
+  sponsorIds: z.array(z.string().min(1)).max(20).optional(),
   dayIds: z.array(coerceInt).max(7).optional(),
 }).superRefine(courseDatesRefine)

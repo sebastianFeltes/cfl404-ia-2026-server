@@ -11,7 +11,7 @@ import {
 const SponsorsRouter = Router()
 
 // Roles con acceso a gestión de patrocinadores y configuración
-const CONFIG_ROLES = ['GOD', 'DIRECTOR', 'REGENTE', 'DIRECTIVO']
+const CONFIG_ROLES = ['god', 'admin', 'director', 'regente', 'directivo']
 
 // ── Patrocinadores ─────────────────────────────────────────────────────────────
 SponsorsRouter.get(

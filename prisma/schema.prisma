@@ -25,7 +25,7 @@ model User {
   locale          String?
   lastLoginAt     DateTime?      @map("last_login_at")
   acceptedTerms   Boolean        @default(false) @map("accepted_terms")
-  attendanceToken String?        @map("attendance_token")
+  attendanceToken String?        @unique @map("attendance_token")
   createdAt       DateTime       @default(now()) @map("created_at")
   updatedAt       DateTime       @updatedAt @map("updated_at")
 
@@ -93,6 +93,7 @@ model Course {
   instructor       User              @relation("CourseInstructor", fields: [instructorId], references: [id])
   family           Family?           @relation(fields: [familyId], references: [id])
   courseDetail     CourseDetail?
+  courseSponsors   CourseSponsor[]
   userCourses      UserCourse[]
   classroomCourses ClassroomCourse[]
   courseDays       CourseDay[]
@@ -109,29 +110,39 @@ model CourseDetail {
   classesQuantity Int      @map("classes_quantity")
   titleRequired   Boolean  @default(false) @map("title_required")
   endorsementBy   String?  @map("endorsement_by")
-  sponsorName     String?  @map("sponsor_name")
-  sponsorLogo     String?  @map("sponsor_logo")
-  sponsorId       String?  @map("sponsor_id")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
   course          Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  sponsor         Sponsor? @relation(fields: [sponsorId], references: [id], onDelete: SetNull)
 
   @@map("course_detail")
 }
 
 model Sponsor {
-  id            String        @id @default(uuid())
-  name          String
-  description   String?
-  logoUrl       String?       @map("logo_url")
-  createdAt     DateTime      @default(now()) @map("created_at")
-  updatedAt     DateTime      @updatedAt @map("updated_at")
+  id          String          @id @default(uuid())
+  name        String
+  description String?
+  logoUrl     String?         @map("logo_url")
+  createdAt   DateTime        @default(now()) @map("created_at")
+  updatedAt   DateTime        @updatedAt @map("updated_at")
 
-  courseDetails CourseDetail[]
+  courseSponsors CourseSponsor[]
 
   @@map("sponsor")
+}
+
+model CourseSponsor {
+  id        String   @id @default(uuid())
+  courseId  String   @map("course_id")
+  sponsorId String   @map("sponsor_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  course  Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  sponsor Sponsor @relation(fields: [sponsorId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, sponsorId])
+  @@index([sponsorId])
+  @@map("course_sponsor")
 }
 
 model UserCourse {

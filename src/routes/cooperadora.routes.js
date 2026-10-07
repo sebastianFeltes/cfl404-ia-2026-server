@@ -14,7 +14,7 @@ import {
 const CooperadoraRouter = Router()
 
 // Roles con permisos para operar en el módulo de Cooperadora y Buffet
-const COOPERADORA_ROLES = ['GOD', 'ADMIN', 'DIRECTOR', 'REGENTE', 'DIRECTIVO', 'SECRETARIA', 'PRECEPTORIA']
+const COOPERADORA_ROLES = ['god', 'admin', 'director', 'regente', 'directivo', 'secretaria', 'preceptoria']
 
 // ── Rutas de Pagos de Cooperadora (Cuotas de Alumnos) ──────────────────────────
 CooperadoraRouter.get(

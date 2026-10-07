@@ -31,20 +31,21 @@ const ROLES = {
     POSTULANTE: 9,
 }
 
-const STATUS_MAP = { 1: 'Activo', 2: 'Inactivo', 3: 'Pendiente', 4: 'Egresado' }
-const STATUS_PENDIENTE = 3
-const STUDENT_ROLES = new Set(['ALUMNO', 'POSTULANTE'])
+const STATUS_MAP = { 1: 'activo', 2: 'inactivo', 3: 'pendiente', 4: 'egresado' }
+const STATUS_ACTIVO = 1
+const STUDENT_ROLES = new Set(['alumno', 'postulante'])
 const userInclude = { role: true, status: true, userDetail: true }
 
-const typeFromRole = (roleName) => (STUDENT_ROLES.has(roleName) ? 'STUDENT' : 'STAFF')
+const typeFromRole = (roleName) =>
+    (STUDENT_ROLES.has(String(roleName || '').toLowerCase()) ? 'STUDENT' : 'STAFF')
 
 const generateAuthToken = (user, type) => signAccessToken(user, type)
 
 function accountMayLogin(user) {
-    const statusName = user.status?.name
-    const roleName = user.role?.name
-    if (statusName === 'ACTIVO') return true
-    return roleName === 'POSTULANTE' && statusName === 'PENDIENTE'
+    const statusName = String(user.status?.name || '').toLowerCase()
+    const roleName = String(user.role?.name || '').toLowerCase()
+    if (statusName === 'activo') return true
+    return roleName === 'postulante' && statusName === 'pendiente'
 }
 
 async function issueSession(res, user, type, { remember = true } = {}) {
@@ -96,10 +97,10 @@ const serializeUser = (user, type) => ({
     lastName: user.lastName,
     email: user.email,
     dni: user.dni,
-    role: user.role.name,
+    role: String(user.role?.name || '').toLowerCase(),
     roleId: user.roleId,
     statusId: user.statusId,
-    status: STATUS_MAP[user.statusId] || 'Activo',
+    status: STATUS_MAP[user.statusId] || String(user.status?.name || 'activo').toLowerCase(),
     emailVerified: user.emailVerified,
     profilePhotoUrl: user.profilePhotoUrl,
     locale: user.locale,
@@ -191,7 +192,7 @@ const syncGoogleProfile = async (user, profile) => {
 const registerStudentFromGoogle = async (profile) => {
     let roleId = ROLES.POSTULANTE
     const postulanteRole = await prisma.role.findFirst({
-        where: { name: 'POSTULANTE' },
+        where: { name: 'postulante' },
     })
     if (postulanteRole) {
         roleId = postulanteRole.id
@@ -208,7 +209,7 @@ const registerStudentFromGoogle = async (profile) => {
             locale: profile.locale,
             lastLoginAt: new Date(),
             acceptedTerms: parseAcceptedTerms(profile.acceptedTerms) === true,
-            statusId: STATUS_PENDIENTE,
+            statusId: STATUS_ACTIVO,
             roleId,
             userDetail: { create: {} },
         },
@@ -252,7 +253,7 @@ export const loginWithGoogle = async (req, res, next) => {
                     error: 'Usuario no registrado en el sistema. Por favor, comunicate con la administración del CFL 404.',
                 })
             }
-            // Todo nuevo usuario que ingresa por Google comienza con rol POSTULANTE
+            // Todo nuevo usuario que ingresa por Google comienza con rol postulante
             record = await registerStudentFromGoogle(profile)
             isNewAccount = true
         } else {
@@ -270,7 +271,7 @@ export const loginWithGoogle = async (req, res, next) => {
 
         return res.json({
             message: isNewAccount
-                ? 'Cuenta creada con Google. Falta que administración valide tus datos.'
+                ? 'Cuenta creada con Google.'
                 : 'Autenticación exitosa',
             isNewAccount,
             token,
@@ -405,8 +406,8 @@ export const getMyProfile = async (req, res, next) => {
 }
 
 function rejectLockedIdentityChange(user, field, nextValue) {
-    const roleName = user.role?.name
-    if (roleName === 'POSTULANTE') return null
+    const roleName = String(user.role?.name || '').toLowerCase()
+    if (roleName === 'postulante') return null
     const current = user[field]
     if (current && String(current).trim() && String(nextValue).trim() !== String(current).trim()) {
         return `No se puede modificar ${field === 'dni' ? 'el DNI' : 'el nombre'} desde este perfil`
@@ -421,6 +422,12 @@ export const updateMyProfile = async (req, res, next) => {
 
         if (!record) {
             return res.status(404).json({ error: 'Usuario no encontrado' })
+        }
+
+        if (String(record.user.role?.name || '').toLowerCase() === 'alumno') {
+            return res.status(403).json({
+                error: 'Como alumno, tu legajo no se puede modificar desde el perfil. Para una rectificación, comunicate con secretaría.',
+            })
         }
 
         const body = req.body || {}

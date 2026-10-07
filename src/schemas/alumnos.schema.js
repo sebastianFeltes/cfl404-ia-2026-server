@@ -86,13 +86,26 @@ export const createAlumnoSchema = z
     gender: z.string().optional().nullable().default(''),
     nacionality: z.string().optional().nullable().default('Argentina'),
     status: z
-      .enum(['Activo', 'Inactivo', 'Pendiente', 'Egresado'])
+      .string()
+      .trim()
+      .toLowerCase()
+      .pipe(z.enum(['activo', 'inactivo', 'pendiente', 'egresado']))
       .optional()
-      .default('Activo'),
+      .default('activo'),
     status_id: z.number().int().refine((id) => [1, 2, 3, 4].includes(id), {
       message: 'El estado debe ser 1, 2, 3 o 4',
     }).optional(),
-    role_name: z.enum(['ALUMNO', 'POSTULANTE', 'Alumno', 'Postulante', 'Aspirante', 'ASPIRANTE']).optional(),
+    role_name: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .transform((r) => {
+        if (['aspirante', 'aspirantes', 'postulantes'].includes(r)) return 'postulante'
+        if (['student', 'students', 'estudiante', 'estudiantes', 'alumnos'].includes(r)) return 'alumno'
+        return r
+      })
+      .pipe(z.enum(['alumno', 'postulante']))
+      .optional(),
     profile_photo_url: z.string().max(2048).optional().nullable(),
     accepted_terms: z.boolean().optional(),
     acceptedTerms: z.boolean().optional(),
@@ -145,11 +158,26 @@ export const updateAlumnoSchema = z
     dob: z.string().optional().nullable(),
     gender: z.string().optional().nullable(),
     nacionality: z.string().optional().nullable(),
-    status: z.enum(['Activo', 'Inactivo', 'Pendiente', 'Egresado']).optional(),
+    status: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .pipe(z.enum(['activo', 'inactivo', 'pendiente', 'egresado']))
+      .optional(),
     status_id: z.number().int().refine((id) => [1, 2, 3, 4].includes(id), {
       message: 'El estado debe ser 1, 2, 3 o 4',
     }).optional(),
-    role_name: z.enum(['ALUMNO', 'POSTULANTE', 'Alumno', 'Postulante', 'Aspirante', 'ASPIRANTE']).optional(),
+    role_name: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .transform((r) => {
+        if (['aspirante', 'aspirantes', 'postulantes'].includes(r)) return 'postulante'
+        if (['student', 'students', 'estudiante', 'estudiantes', 'alumnos'].includes(r)) return 'alumno'
+        return r
+      })
+      .pipe(z.enum(['alumno', 'postulante']))
+      .optional(),
     profile_photo_url: z.string().max(2048).optional().nullable(),
     accepted_terms: z.boolean().optional(),
     acceptedTerms: z.boolean().optional(),
