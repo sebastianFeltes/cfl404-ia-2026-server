@@ -71,7 +71,7 @@ const COURSE_INCLUDE = {
     orderBy: { dayId: 'asc' },
   },
   _count: {
-    select: { userCourses: true },
+    select: { userCourses: { where: { occupiesQuota: true } } },
   },
 }
 
@@ -167,6 +167,8 @@ export function toClientCourse(course) {
       title_required: course.courseDetail?.titleRequired ? 'Secundario Completo' : 'Primario Completo',
       titleRequired: Boolean(course.courseDetail?.titleRequired),
       endorsement_by: course.courseDetail?.endorsementBy || 'CFP N°404 Berisso',
+      whatsappGroupUrl: course.courseDetail?.whatsappGroupUrl || '',
+      resourcesUrl: course.courseDetail?.resourcesUrl || '',
     },
   }
 }
@@ -213,7 +215,9 @@ async function syncCourseDays(tx, courseId, dayIds) {
 export const getCourses = async (req, res, next) => {
   try {
     const { take, skip } = parsePagination(req.query, { defaultTake: 100, maxTake: 100 })
+    const mine = req.query.scope === 'mine' && req.user?.role === 'instructor'
     const courses = await prisma.course.findMany({
+      where: mine ? { instructorId: req.user.id } : undefined,
       include: COURSE_INCLUDE,
       orderBy: { createdAt: 'desc' },
       take,
@@ -283,6 +287,8 @@ export const createCourse = async (req, res, next) => {
       classesQuantity = 32,
       titleRequired = false,
       endorsementBy = 'Ministerio de Educación y Trabajo de la Provincia de Buenos Aires',
+      whatsappGroupUrl = null,
+      resourcesUrl = null,
       sponsorIds = [],
       dayIds = [],
     } = req.body
@@ -316,6 +322,8 @@ export const createCourse = async (req, res, next) => {
               classesQuantity: Number(classesQuantity),
               titleRequired: Boolean(titleRequired),
               endorsementBy,
+              whatsappGroupUrl: whatsappGroupUrl || null,
+              resourcesUrl: resourcesUrl || null,
             },
           },
         },
@@ -357,6 +365,8 @@ export const updateCourse = async (req, res, next) => {
       classesQuantity,
       titleRequired,
       endorsementBy,
+      whatsappGroupUrl,
+      resourcesUrl,
       sponsorIds,
       dayIds,
     } = req.body
@@ -392,6 +402,8 @@ export const updateCourse = async (req, res, next) => {
         ...(classesQuantity !== undefined && { classesQuantity: Number(classesQuantity) }),
         ...(titleRequired !== undefined && { titleRequired: Boolean(titleRequired) }),
         ...(endorsementBy !== undefined && { endorsementBy }),
+        ...(whatsappGroupUrl !== undefined && { whatsappGroupUrl: whatsappGroupUrl || null }),
+        ...(resourcesUrl !== undefined && { resourcesUrl: resourcesUrl || null }),
       }
 
       await tx.course.update({

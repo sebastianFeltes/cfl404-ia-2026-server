@@ -31,7 +31,8 @@ describe('attendance-time', () => {
     assert.deepEqual(resolveAttendanceCodeName(30), { codeName: 'tarde' })
     assert.deepEqual(resolveAttendanceCodeName(31), { codeName: 'media falta' })
     assert.deepEqual(resolveAttendanceCodeName(44), { codeName: 'media falta' })
-    assert.deepEqual(resolveAttendanceCodeName(45), { codeName: 'ausente' })
+    assert.deepEqual(resolveAttendanceCodeName(45), { codeName: 'media falta' })
+    assert.deepEqual(resolveAttendanceCodeName(46), { codeName: 'ausente', late: true })
     assert.ok(resolveAttendanceCodeName(-61).error)
   })
 

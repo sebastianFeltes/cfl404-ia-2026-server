@@ -4,6 +4,12 @@ import { parsePagination } from '../lib/pagination.js'
 import { assertAllowedPhotoUrl } from '../lib/photo-url.js'
 import { parseAcceptedTerms } from '../lib/accepted-terms.js'
 import { ensureAttendanceToken, buildAttendanceTokenFromUserId } from '../lib/attendance-token.js'
+import {
+  EnrollmentError,
+  asignarCurso,
+  assignApplicantNumber,
+  liberarCupo,
+} from '../lib/enrollment.js'
 
 const STATUS_MAP = {
   1: 'activo',
@@ -86,8 +92,25 @@ const studentInclude = {
   status: true,
 }
 
+function formatCourseSchedule(course) {
+  const days = course?.courseDays?.map((item) => item.day?.name).filter(Boolean).join(', ')
+  const hours = course?.startTime && course?.endTime
+    ? `${course.startTime} a ${course.endTime}`
+    : (course?.startTime || '')
+  return [days, hours].filter(Boolean).join(' · ') || 'Sin horario'
+}
+
 function formatStudent(s) {
-  const primaryUserCourse = s.userCourses?.[0]
+  const occupyingCourses = (s.userCourses || [])
+    .filter((row) => row.occupiesQuota !== false && row.course)
+    .map((row) => ({
+      id: row.id,
+      courseId: row.courseId,
+      name: row.course.name,
+      schedule: formatCourseSchedule(row.course),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'es'))
+  const primaryUserCourse = (s.userCourses || []).find((row) => row.occupiesQuota !== false && row.course) || s.userCourses?.[0]
   const courseObj = primaryUserCourse?.course
   const activeCourse = courseObj?.name || 'Sin curso asignado'
   const statusText = STATUS_MAP[s.statusId] || String(s.status?.name || 'activo').toLowerCase()
@@ -111,6 +134,7 @@ function formatStudent(s) {
     first_name: s.firstName,
     last_name: s.lastName,
     dni: s.dni,
+    applicant_number: s.applicantNumber ?? null,
     email: s.email,
     phone: s.userDetail?.phone || '',
     extra_phone: s.userDetail?.extraPhone || '',
@@ -120,8 +144,9 @@ function formatStudent(s) {
     gender: s.userDetail?.gender || '',
     nacionality: s.userDetail?.nacionality || 'Argentina',
     academic_level: s.userDetail?.academicLevel || 'Secundario',
-    course_name: activeCourse,
-    course: activeCourse,
+    course_name: occupyingCourses[0]?.name || activeCourse,
+    course: occupyingCourses[0]?.name || activeCourse,
+    courses: occupyingCourses,
     instructor_name: instructorName,
     course_schedule: schedule,
     classroom_name: classroomName,
@@ -137,9 +162,6 @@ function formatStudent(s) {
     profile_photo_url: s.profilePhotoUrl,
     accepted_terms: Boolean(s.acceptedTerms),
     acceptedTerms: Boolean(s.acceptedTerms),
-    dni_copy: true,
-    form_copy: true,
-    title_copy: true,
     studentDetail: s.userDetail,
     studentCourses: s.userCourses,
     createdAt: s.createdAt,
@@ -302,15 +324,29 @@ export const createAlumno = async (req, res, next) => {
     })
 
     const selectedCourseName = course_name || course
+    let enrolledCourseName = selectedCourseName || 'Sin curso asignado'
+    if (targetRoleName === 'postulante') {
+      await assignApplicantNumber(newStudent.id)
+    }
     if (selectedCourseName) {
       const targetCourse = await resolveExistingCourse(selectedCourseName)
       if (targetCourse) {
-        await prisma.userCourse.create({
-          data: {
-            userId: newStudent.id,
-            courseId: targetCourse.id,
-          },
-        })
+        try {
+          await asignarCurso({ userId: newStudent.id, courseId: targetCourse.id })
+          enrolledCourseName = targetCourse.name
+        } catch (error) {
+          if (error instanceof EnrollmentError) {
+            return res.status(error.statusCode).json({
+              error: error.message,
+              id: newStudent.id,
+              applicant_number: (await prisma.user.findUnique({
+                where: { id: newStudent.id },
+                select: { applicantNumber: true },
+              }))?.applicantNumber ?? null,
+            })
+          }
+          throw error
+        }
       }
     }
 
@@ -337,7 +373,7 @@ export const createAlumno = async (req, res, next) => {
         phone: newStudent.userDetail?.phone || '',
         address: newStudent.userDetail?.address || '',
         academic_level: newStudent.userDetail?.academicLevel || 'Secundario',
-        course_name: selectedCourseName || 'Sin curso asignado',
+        course_name: enrolledCourseName,
         course: selectedCourseName || 'Sin curso asignado',
         enrollment_date: new Date(newStudent.createdAt).toLocaleDateString('es-AR'),
         status_id: newStudent.statusId,
@@ -475,16 +511,26 @@ export const updateAlumno = async (req, res, next) => {
     if (selectedCourseName !== undefined && selectedCourseName !== null && selectedCourseName !== '') {
       const targetCourse = await resolveExistingCourse(selectedCourseName)
       if (targetCourse) {
-        await prisma.userCourse.deleteMany({
-          where: { userId: id },
+        const current = await prisma.userCourse.findMany({
+          where: { userId: id, occupiesQuota: true, NOT: { courseId: targetCourse.id } },
+          select: { courseId: true },
         })
-        await prisma.userCourse.create({
-          data: {
-            userId: id,
-            courseId: targetCourse.id,
-          },
-        })
+        for (const row of current) {
+          await liberarCupo({ userId: id, courseId: row.courseId })
+        }
+        try {
+          await asignarCurso({ userId: id, courseId: targetCourse.id })
+        } catch (error) {
+          if (error instanceof EnrollmentError) {
+            return res.status(error.statusCode).json({ error: error.message })
+          }
+          throw error
+        }
       }
+    }
+
+    if (String(updatedStudent.role?.name || '').toLowerCase() === 'postulante' || role_name === 'postulante') {
+      await assignApplicantNumber(id)
     }
 
     const refreshedStudent = await findStudentById(id)
@@ -500,6 +546,31 @@ export const updateAlumno = async (req, res, next) => {
       status: 'success',
       message: 'Alumno actualizado exitosamente',
       data: formatStudent(refreshedStudent || updatedStudent),
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+export const releaseAlumnoCourse = async (req, res, next) => {
+  try {
+    const { id, courseId } = req.params
+    const studentExists = await prisma.user.findFirst({
+      where: { id, role: { name: { in: STUDENT_ROLE_NAMES } } },
+    })
+    if (!studentExists || STAFF_ROLE_IDS.has(studentExists.roleId)) {
+      return res.status(404).json({ error: 'Alumno no encontrado' })
+    }
+
+    const result = await liberarCupo({ userId: id, courseId })
+    if (!result.released) {
+      return res.status(404).json({ error: 'Esa persona no tiene cupo en ese curso' })
+    }
+
+    const refreshed = await findStudentById(id)
+    return res.json({
+      data: refreshed ? formatStudent(refreshed) : null,
+      released: result.released,
     })
   } catch (error) {
     next(error)
@@ -525,6 +596,8 @@ export const deleteAlumno = async (req, res, next) => {
         error: 'Alumno no encontrado para eliminar',
       })
     }
+
+    await liberarCupo({ userId: id })
 
     await prisma.user.update({
       where: { id },

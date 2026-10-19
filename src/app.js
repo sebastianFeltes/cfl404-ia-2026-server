@@ -11,8 +11,10 @@ import AlumnosRouter from './routes/alumnos.routes.js'
 import CooperadoraRouter from './routes/cooperadora.routes.js'
 import SettingsRouter from './routes/settings.routes.js'
 import SponsorsRouter from './routes/sponsors.routes.js'
-import QueueRouter from './routes/queue.routes.js'
 import attendanceRouter from './routes/attendance.routes.js'
+import mobileRouter from './routes/mobile.routes.js'
+import PreinscripcionRouter from './routes/preinscripcion.routes.js'
+import AvisoRouter from './routes/aviso.routes.js'
 import { globalErrorHandler } from './middlewares/errorHandler.middlewares.js'
 
 const app = express()
@@ -40,13 +42,25 @@ app.use((req, _res, next) => {
   next()
 })
 
+export function shouldSkipGlobalRateLimit(req) {
+  if (req.method === 'OPTIONS') return true
+  const path = req.path || ''
+  if (req.method === 'GET' && (path === '/courses' || path === '/api/courses' || path === '/api/v1/courses')) {
+    return true
+  }
+  if (req.method === 'POST' && (path === '/api/v1/preinscripciones' || path === '/api/preinscripciones')) {
+    return true
+  }
+  return false
+}
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: isProduction ? 200 : 2000,
   message: { error: 'Demasiadas solicitudes desde esta IP, intente de nuevo más tarde' },
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => req.method === 'OPTIONS',
+  skip: shouldSkipGlobalRateLimit,
 })
 app.use(limiter)
 
@@ -59,6 +73,7 @@ const authLimiter = rateLimit({
   skip: (req) => req.method === 'OPTIONS' || !isProduction,
 })
 app.use('/api/auth', authLimiter)
+app.use('/api/mobile/auth', authLimiter)
 
 const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:5173')
   .split(',')
@@ -95,6 +110,7 @@ app.get('/health', (req, res) => {
 })
 
 app.use(authRouter)
+app.use('/api/mobile', mobileRouter)
 app.use(CourseRouter)
 app.use(StaffRouter)
 app.use('/api/v1', AlumnosRouter)
@@ -102,7 +118,8 @@ app.use('/api', AlumnosRouter)
 app.use(CooperadoraRouter)
 app.use(SettingsRouter)
 app.use(SponsorsRouter)
-app.use(QueueRouter)
+app.use(PreinscripcionRouter)
+app.use(AvisoRouter)
 app.use('/api/v1', attendanceRouter)
 app.use('/api', attendanceRouter)
 app.use(attendanceRouter)

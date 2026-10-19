@@ -121,16 +121,21 @@ describe('auditoría de seguridad CFL 404', () => {
     assert.equal(res.status, 404)
   })
 
-  test('C-05 cola virtual: join público y webhook exige secreto', async () => {
+  test('C-05 el webhook de preinscripción exige secreto y la cola en memoria no existe', async () => {
     const join = await jsonRequest(ctx.base, '/api/queue/join', {
       method: 'POST',
       body: { courseId: 'x' },
     })
-    const hook = await jsonRequest(ctx.base, '/api/webhooks/queue', {
+    const legacy = await jsonRequest(ctx.base, '/api/webhooks/queue', {
       method: 'POST',
       body: { ticketId: 'TQ-1', status: 'DONE' },
     })
-    assert.equal(join.status, 201)
+    const hook = await jsonRequest(ctx.base, '/api/webhooks/preinscripcion', {
+      method: 'POST',
+      body: { event: 'preinscripcion.confirmada', courseId: 'x' },
+    })
+    assert.equal(join.status, 404)
+    assert.equal(legacy.status, 404)
     assert.equal(hook.status, 401)
   })
 

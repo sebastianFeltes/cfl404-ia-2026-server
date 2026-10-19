@@ -47,6 +47,10 @@ export const createCourseSchema = z.object({
 
   classesQuantity: coerceInt.min(1, 'La cantidad de clases debe ser mayor a 0').optional(),
 
+  whatsappGroupUrl: z.string().trim().max(500).optional().nullable(),
+
+  resourcesUrl: z.string().trim().max(500).optional().nullable(),
+
   statusId: courseStatusId.optional(),
 
   maxAbsences: coerceInt.min(0).optional(),
@@ -74,6 +78,8 @@ export const updateCourseSchema = z.object({
   quota: coerceInt.min(1).optional(),
   hourQuantity: coerceInt.min(1).optional(),
   classesQuantity: coerceInt.min(1).optional(),
+  whatsappGroupUrl: z.string().trim().max(500).optional().nullable(),
+  resourcesUrl: z.string().trim().max(500).optional().nullable(),
   statusId: courseStatusId.optional(),
   maxAbsences: coerceInt.min(0).optional(),
   startTime: optionalTime,

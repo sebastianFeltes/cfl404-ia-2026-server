@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import {
     loginWithGoogle,
+    loginWithPassword,
     devLoginFallback,
     getMyProfile,
     updateMyProfile,
@@ -13,6 +14,7 @@ import { isDevLoginEnabled } from '../lib/dev-login.js'
 const authRouter = Router()
 
 authRouter.post('/api/auth/google', loginWithGoogle)
+authRouter.post('/api/auth/login', loginWithPassword)
 
 if (isDevLoginEnabled()) {
     authRouter.post('/api/auth/dev-login', devLoginFallback)

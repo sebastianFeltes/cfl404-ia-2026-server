@@ -16,6 +16,7 @@ model User {
   email           String         @unique
   // Google no provee DNI: queda nulo hasta que administración complete el legajo.
   dni             String?        @unique
+  passwordHash    String?        @map("password_hash")
   statusId        Int            @map("status_id")
   roleId          Int            @map("role_id")
   // Campos provenientes del ID token de Google (claims sub, email_verified, picture, locale)
@@ -26,6 +27,7 @@ model User {
   lastLoginAt     DateTime?      @map("last_login_at")
   acceptedTerms   Boolean        @default(false) @map("accepted_terms")
   attendanceToken String?        @unique @map("attendance_token")
+  applicantNumber Int?           @unique @map("applicant_number")
   createdAt       DateTime       @default(now()) @map("created_at")
   updatedAt       DateTime       @updatedAt @map("updated_at")
 
@@ -36,6 +38,9 @@ model User {
   instructedCourses Course[]             @relation("CourseInstructor")
   cooperadoraPayments CooperadoraPayment[]
   refreshTokens     RefreshToken[]
+  avisosCreated     Aviso[]              @relation("AvisoCreatedBy")
+  avisosUpdated     Aviso[]              @relation("AvisoUpdatedBy")
+  queueTickets      QueueTicket[]
 
   @@index([attendanceToken])
   @@map("users")
@@ -97,6 +102,8 @@ model Course {
   userCourses      UserCourse[]
   classroomCourses ClassroomCourse[]
   courseDays       CourseDay[]
+  avisos           Aviso[]
+  queueTickets     QueueTicket[]
 
   @@map("course")
 }
@@ -108,8 +115,10 @@ model CourseDetail {
   quota           Int
   hourQuantity    Int      @map("hour_quantity")
   classesQuantity Int      @map("classes_quantity")
-  titleRequired   Boolean  @default(false) @map("title_required")
-  endorsementBy   String?  @map("endorsement_by")
+  titleRequired    Boolean  @default(false) @map("title_required")
+  endorsementBy    String?  @map("endorsement_by")
+  whatsappGroupUrl String?  @map("whatsapp_group_url")
+  resourcesUrl     String?  @map("resources_url")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
@@ -146,17 +155,21 @@ model CourseSponsor {
 }
 
 model UserCourse {
-  id        String       @id @default(uuid())
-  userId    String       @map("user_id")
-  courseId  String       @map("course_id")
-  createdAt DateTime     @default(now()) @map("created_at")
-  updatedAt DateTime     @updatedAt @map("updated_at")
+  id            String       @id @default(uuid())
+  userId        String       @map("user_id")
+  courseId      String       @map("course_id")
+  occupiesQuota Boolean      @default(true) @map("occupies_quota")
+  position      Int          @default(0)
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
 
   user        User         @relation(fields: [userId], references: [id])
   course      Course       @relation(fields: [courseId], references: [id])
   attendances Attendance[]
 
   @@unique([userId, courseId])
+  @@index([courseId, occupiesQuota])
+  @@index([courseId, position])
   @@map("user_course")
 }
 
@@ -230,13 +243,56 @@ model Attendance {
   id               String         @id @default(uuid())
   userCourseId     String         @map("user_course_id")
   idCode           Int            @map("id_code")
+  sessionDate      String?        @map("session_date")
   createdAt        DateTime       @default(now()) @map("created_at")
   updatedAt        DateTime       @updatedAt @map("updated_at")
 
   userCourse       UserCourse     @relation(fields: [userCourseId], references: [id])
   attendanceCode   AttendanceCode @relation(fields: [idCode], references: [id])
 
+  @@unique([userCourseId, sessionDate])
   @@map("attendance")
+}
+
+model Aviso {
+  id          String    @id @default(uuid())
+  title       String
+  body        String
+  type        String
+  audience    String
+  courseId    String?   @map("course_id")
+  priority    Int       @default(0)
+  publication String    @default("borrador")
+  startsAt    DateTime? @map("starts_at")
+  endsAt      DateTime? @map("ends_at")
+  createdById String    @map("created_by_id")
+  updatedById String?   @map("updated_by_id")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  course    Course? @relation(fields: [courseId], references: [id])
+  createdBy User    @relation("AvisoCreatedBy", fields: [createdById], references: [id])
+  updatedBy User?   @relation("AvisoUpdatedBy", fields: [updatedById], references: [id])
+
+  @@index([publication])
+  @@map("aviso")
+}
+
+model QueueTicket {
+  id         String    @id @default(uuid())
+  userId     String    @map("user_id")
+  courseId   String    @map("course_id")
+  status     String
+  readyUntil DateTime? @map("ready_until")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  user   User   @relation(fields: [userId], references: [id])
+  course Course @relation(fields: [courseId], references: [id])
+
+  @@index([userId, courseId, status])
+  @@index([courseId, status, createdAt])
+  @@map("queue_ticket")
 }
 
 model AttendanceCode {

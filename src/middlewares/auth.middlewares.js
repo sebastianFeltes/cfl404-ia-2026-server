@@ -103,11 +103,16 @@ async function loadActiveUserFromToken(token) {
     return user
 }
 
+function isPreinscripcionRoute(req) {
+    const url = `${req.originalUrl || ''} ${req.path || ''}`
+    return url.includes('/preinscripciones')
+}
+
 function statusAllowsAccess(user, req) {
     const statusName = String(user.status?.name || '').toLowerCase()
     if (statusName === 'activo') return true
     const isPendingPostulant = normalizeRole(user.role?.name) === 'postulante' && statusName === 'pendiente'
-    return isPendingPostulant && isAuthMeRoute(req)
+    return isPendingPostulant && (isAuthMeRoute(req) || isPreinscripcionRoute(req))
 }
 
 /**

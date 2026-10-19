@@ -148,7 +148,7 @@ describe('API de asistencia', () => {
 
   test('GET /api/attendance/course/:id devuelve grilla', async () => {
     const course = await prisma.course.findFirst({
-      where: { status: { name: 'activo' } },
+      where: { status: { name: { in: ['activo', 'inscripcion_abierta', 'ultimos_cupos', 'cupo_completo'] } } },
       select: { id: true },
     })
     assert.ok(course?.id)
@@ -210,6 +210,48 @@ describe('API de asistencia', () => {
     if ('attendanceToken' in (updated || {})) {
       assert.ok(updated.attendanceToken)
       assert.match(updated.attendanceToken, /CFL404-ATT-/)
+    }
+  })
+
+  test('un curso con inscripción abierta entra a la planilla y verify no existe', async () => {
+    const instructor = await prisma.user.findFirst({ where: { role: { name: 'instructor' } } })
+    const course = await prisma.course.create({
+      data: {
+        name: `Planilla ${Date.now()}`,
+        statusId: 8,
+        instructorId: instructor.id,
+        maxAbsences: 4,
+        startTime: '18:00',
+        endTime: '20:00',
+      },
+    })
+    try {
+      const list = await jsonRequest(ctx.base, '/api/attendance/courses', { token: director.token })
+      assert.equal(list.status, 200)
+      assert.ok(list.json.data.some((item) => item.id === course.id))
+      const enrollment = await prisma.userCourse.create({
+        data: { userId: alumno.user.id, courseId: course.id, occupiesQuota: true, position: 1 },
+      })
+      const mark = await jsonRequest(ctx.base, `/api/attendance/course/${course.id}/mark`, {
+        method: 'PATCH',
+        token: director.token,
+        body: { userCourseId: enrollment.id, date: '2026-03-02', code: 'justificado' },
+      })
+      assert.equal(mark.status, 200)
+      assert.equal(mark.json.code, 'J')
+      const gone = await jsonRequest(ctx.base, '/api/attendance/verify', {
+        method: 'POST',
+        token: director.token,
+        body: {},
+      })
+      assert.equal(gone.status, 404)
+    } finally {
+      await prisma.attendance.deleteMany({ where: { userCourse: { courseId: course.id } } })
+      await prisma.userCourse.deleteMany({ where: { courseId: course.id } })
+      await prisma.courseDetail.deleteMany({ where: { courseId: course.id } })
+      await prisma.courseDay.deleteMany({ where: { courseId: course.id } })
+      await prisma.courseSponsor.deleteMany({ where: { courseId: course.id } }).catch(() => {})
+      await prisma.course.delete({ where: { id: course.id } })
     }
   })
 })

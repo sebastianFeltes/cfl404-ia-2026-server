@@ -73,8 +73,8 @@ export function parseStartTimeMinutes(startTime) {
  * Ventanas (minutos desde el inicio del curso):
  *  -60 a +15 → presente
  *  +16 a +30 → tarde
- *  +31 a +44 → media falta
- *  +45 en adelante → ausente
+ *  +31 a +45 → media falta
+ *  +46 en adelante → ausente tardío, no es una marca normal
  */
 export function resolveAttendanceCodeName(minutesFromStart) {
   if (minutesFromStart < -60) {
@@ -82,8 +82,8 @@ export function resolveAttendanceCodeName(minutesFromStart) {
   }
   if (minutesFromStart <= 15) return { codeName: 'presente' }
   if (minutesFromStart <= 30) return { codeName: 'tarde' }
-  if (minutesFromStart <= 44) return { codeName: 'media falta' }
-  return { codeName: 'ausente' }
+  if (minutesFromStart <= 45) return { codeName: 'media falta' }
+  return { codeName: 'ausente', late: true }
 }
 
 export function abbreviateAttendanceCode(codeName) {

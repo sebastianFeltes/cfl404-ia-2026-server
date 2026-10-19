@@ -1,17 +1,17 @@
 import { Router } from 'express'
-import { authenticateToken, requireQrScanner, requireStaff } from '../middlewares/auth.middlewares.js'
+import { authenticateToken, authorizeRoles, requireQrScanner } from '../middlewares/auth.middlewares.js'
 import {
-  getAttendance,
   getAttendanceByCourse,
   getAttendanceCourses,
+  markAttendance,
   scanAttendance,
-  verifyAndRegisterAttendance,
 } from '../controllers/attendance.controllers.js'
 
 const attendanceRouter = Router()
-
-attendanceRouter.get('/attendance', authenticateToken, requireStaff, getAttendance)
-attendanceRouter.post('/attendance/verify', authenticateToken, requireStaff, verifyAndRegisterAttendance)
+const ATTENDANCE_READ_ROLES = [
+  'god', 'admin', 'director', 'regente', 'directivo',
+  'secretaria', 'preceptoria', 'instructor',
+]
 
 attendanceRouter.post(
   '/attendance/scan',
@@ -23,14 +23,21 @@ attendanceRouter.post(
 attendanceRouter.get(
   '/attendance/courses',
   authenticateToken,
-  requireStaff,
+  authorizeRoles(ATTENDANCE_READ_ROLES),
   getAttendanceCourses,
+)
+
+attendanceRouter.patch(
+  '/attendance/course/:courseId/mark',
+  authenticateToken,
+  authorizeRoles(['god', 'director', 'regente', 'secretaria', 'preceptoria']),
+  markAttendance,
 )
 
 attendanceRouter.get(
   '/attendance/course/:courseId',
   authenticateToken,
-  requireStaff,
+  authorizeRoles(ATTENDANCE_READ_ROLES),
   getAttendanceByCourse,
 )
 

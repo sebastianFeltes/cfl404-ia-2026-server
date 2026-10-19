@@ -3,6 +3,8 @@ import prisma from '../lib/prisma.js'
 import { parseAcceptedTerms } from '../lib/accepted-terms.js'
 import { assertAllowedPhotoUrl } from '../lib/photo-url.js'
 import { DEV_LOGIN_ACCOUNTS, isDevLoginEnabled } from '../lib/dev-login.js'
+import { normalizeDni, passwordError, passwordsMatch } from '../lib/password.js'
+import { assignApplicantNumber } from '../lib/enrollment.js'
 import {
     ACCESS_COOKIE,
     REFRESH_COOKIE,
@@ -97,6 +99,7 @@ const serializeUser = (user, type) => ({
     lastName: user.lastName,
     email: user.email,
     dni: user.dni,
+    applicantNumber: user.applicantNumber ?? null,
     role: String(user.role?.name || '').toLowerCase(),
     roleId: user.roleId,
     statusId: user.statusId,
@@ -209,14 +212,20 @@ const registerStudentFromGoogle = async (profile) => {
             locale: profile.locale,
             lastLoginAt: new Date(),
             acceptedTerms: parseAcceptedTerms(profile.acceptedTerms) === true,
-            statusId: STATUS_ACTIVO,
+            statusId: 3,
             roleId,
             userDetail: { create: {} },
         },
         include: userInclude,
     })
 
-    return { user: student, type: 'STUDENT' }
+    await assignApplicantNumber(student.id)
+    const withNumber = await prisma.user.findUnique({
+        where: { id: student.id },
+        include: userInclude,
+    })
+
+    return { user: withNumber, type: 'STUDENT' }
 }
 
 export const loginWithGoogle = async (req, res, next) => {
@@ -285,27 +294,79 @@ export const loginWithGoogle = async (req, res, next) => {
     }
 }
 
+export const loginWithPassword = async (req, res, next) => {
+    try {
+        const dni = normalizeDni(req.body?.dni ?? req.body?.username)
+        const password = req.body?.password
+
+        if (!dni) {
+            return res.status(400).json({ error: 'Ingresá tu DNI' })
+        }
+
+        const policyError = passwordError(password)
+        if (policyError) {
+            return res.status(400).json({ error: policyError })
+        }
+
+        const user = await prisma.user.findUnique({
+            where: { dni },
+            include: userInclude,
+        })
+
+        const valid = await passwordsMatch(password, user?.passwordHash)
+        if (!user?.passwordHash || !valid) {
+            return res.status(401).json({ error: 'DNI o contraseña incorrectos' })
+        }
+
+        if (req.mobileAlumnoOnly && String(user.role?.name || '').toLowerCase() !== 'alumno') {
+            return res.status(403).json({ error: 'No sos alumno del centro' })
+        }
+
+        if (!accountMayLogin(user)) {
+            return res.status(401).json({ error: 'Cuenta inactiva o no habilitada' })
+        }
+
+        const type = typeFromRole(user.role.name)
+        const token = await issueSession(res, user, type, { remember: req.body?.remember !== false })
+
+        return res.json({
+            message: 'Autenticación exitosa',
+            token,
+            user: serializeUser(user, type),
+        })
+    } catch (error) {
+        next(error)
+    }
+}
+
 export const devLoginFallback = async (req, res, next) => {
     try {
         if (!isDevLoginEnabled()) {
             return res.status(404).json({ error: 'Not found' })
         }
 
+        const requestedEmail = String(req.body?.email || '').trim().toLowerCase()
         const { accountType = 'alumno' } = req.body || {}
         const key = String(accountType || '').toLowerCase()
-        const targetEmail = DEV_LOGIN_ACCOUNTS[key]
+        const targetEmail = requestedEmail || DEV_LOGIN_ACCOUNTS[key]
         if (!targetEmail) {
             return res.status(400).json({ error: 'Tipo de cuenta de desarrollo no válido' })
         }
 
         const record = await findUserByEmailOrGoogleId(targetEmail)
         if (!record) {
+            if (req.mobileAlumnoOnly) {
+                return res.status(403).json({ error: 'No sos alumno del centro' })
+            }
             return res.status(404).json({
                 error: `Usuario de prueba con email ${targetEmail} no encontrado. Ejecutá "npm run db:seed".`,
             })
         }
 
         const { user, type } = record
+        if (req.mobileAlumnoOnly && String(user.role?.name || '').toLowerCase() !== 'alumno') {
+            return res.status(403).json({ error: 'No sos alumno del centro' })
+        }
         if (!accountMayLogin(user)) {
             return res.status(401).json({ error: 'Cuenta inactiva o no habilitada' })
         }

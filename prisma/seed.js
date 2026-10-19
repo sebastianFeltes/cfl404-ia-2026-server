@@ -1,11 +1,20 @@
 import 'dotenv/config'
 import prisma from '../src/lib/prisma.js'
 import { ensureAttendanceToken } from '../src/lib/attendance-token.js'
+import { hashPassword } from '../src/lib/password.js'
 import {
   CURSOS_WEB_2026,
   LEGACY_COURSE_NAMES,
   PLACEHOLDER_INSTRUCTOR_EMAIL,
 } from './cursos-web-2026.js'
+import {
+  DEFAULT_ACERCA,
+  DEFAULT_AYUDA,
+  DEFAULT_BENEFICIOS,
+  DEFAULT_CONTACTO,
+  DEFAULT_COOPERADORA,
+  MOBILE_SETTING_KEYS,
+} from '../src/lib/mobile-content.js'
 
 const MOCK_STUDENTS_SEED = [
   {
@@ -463,6 +472,7 @@ async function main() {
         lastName: 'Pérez',
         email: studentEmail,
         dni: '40123456',
+        passwordHash: await hashPassword('Alumno404!'),
         statusId: STATUSES.ACTIVO,
         roleId: ROLES.ALUMNO,
         googleId: 'google-student-fallback-id',
@@ -482,6 +492,12 @@ async function main() {
     console.log(`✅ Alumno de prueba creado: ${student.firstName} ${student.lastName} (${student.email})`)
   } else {
     console.log(`ℹ️ Alumno de prueba ya existe: ${studentEmail}`)
+    if (!studentExists.passwordHash) {
+      await prisma.user.update({
+        where: { id: studentExists.id },
+        data: { passwordHash: await hashPassword('Alumno404!') },
+      })
+    }
   }
 
   const teacherEmail = 'docente.test@cfl404.edu.ar'
@@ -551,6 +567,7 @@ async function main() {
         lastName: 'Ibáñez',
         email: directorEmail,
         dni: '25333444',
+        passwordHash: await hashPassword('Directivo404!'),
         statusId: STATUSES.ACTIVO,
         roleId: ROLES.DIRECTOR,
         googleId: 'google-directivo-fallback-id',
@@ -569,6 +586,12 @@ async function main() {
     console.log(`✅ Director de prueba creado: ${director.firstName} ${director.lastName} (${director.email})`)
   } else {
     console.log(`ℹ️ Director de prueba ya existe: ${directorEmail}`)
+    if (!directorExists.passwordHash) {
+      await prisma.user.update({
+        where: { id: directorExists.id },
+        data: { passwordHash: await hashPassword('Directivo404!') },
+      })
+    }
   }
 
   const contralorEmail = 'contralor.test@cfl404.edu.ar'
@@ -758,6 +781,48 @@ async function main() {
     })
   }
   console.log('✅ KPIs institucionales sembradas.')
+
+  const mobileSettings = [
+    {
+      key: MOBILE_SETTING_KEYS.beneficios,
+      name: 'Beneficios de la app',
+      description: 'Comercios adheridos que ve el alumno',
+      value: JSON.stringify(DEFAULT_BENEFICIOS),
+    },
+    {
+      key: MOBILE_SETTING_KEYS.contacto,
+      name: 'Contacto institucional',
+      description: 'Canales oficiales de la app',
+      value: JSON.stringify(DEFAULT_CONTACTO),
+    },
+    {
+      key: MOBILE_SETTING_KEYS.ayuda,
+      name: 'Ayuda de la app',
+      description: 'Guías para el alumno',
+      value: JSON.stringify(DEFAULT_AYUDA),
+    },
+    {
+      key: MOBILE_SETTING_KEYS.cooperadora,
+      name: 'Datos de la cooperadora',
+      description: 'Alias, CBU y cuota de referencia',
+      value: JSON.stringify(DEFAULT_COOPERADORA),
+    },
+    {
+      key: MOBILE_SETTING_KEYS.acerca,
+      name: 'Acerca de la app',
+      description: 'Descripción, creadores, soporte y enlaces de calificación',
+      value: JSON.stringify(DEFAULT_ACERCA),
+    },
+  ]
+
+  for (const item of mobileSettings) {
+    await prisma.setting.upsert({
+      where: { key: item.key },
+      update: {},
+      create: item,
+    })
+  }
+  console.log('✅ Contenido de la app mobile sembrado.')
 
   console.log('✨ Base de datos poblada exitosamente.')
 }
