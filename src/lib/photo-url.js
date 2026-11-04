@@ -1,3 +1,5 @@
+const OWN_AVATAR = /^\/uploads\/avatars\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpg|png|webp)(\?v=\d+)?$/i
+
 const ALLOWED_HOSTS = new Set([
   'lh3.googleusercontent.com',
   'lh4.googleusercontent.com',
@@ -22,6 +24,7 @@ export function isAllowedPhotoUrl(value) {
   if (typeof value !== 'string') return false
   const trimmed = value.trim()
   if (!trimmed) return true
+  if (OWN_AVATAR.test(trimmed)) return true
   const lower = trimmed.toLowerCase()
   if (lower.startsWith('javascript:') || lower.startsWith('data:') || lower.startsWith('http:')) {
     return false

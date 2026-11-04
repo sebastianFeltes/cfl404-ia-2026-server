@@ -1,5 +1,7 @@
 // Archivo: src/schemas/alumnos.schema.js
 import { z } from 'zod'
+import { dobError, stripText } from '../lib/profile-input.js'
+import { isAllowedPhotoUrl } from '../lib/photo-url.js'
 
 /**
  * Función auxiliar para validar que un teléfono no sea una secuencia repetitiva o ficticia
@@ -42,12 +44,12 @@ export const createAlumnoSchema = z
   .object({
     first_name: z
       .string({ required_error: 'El nombre es obligatorio' })
-      .min(2, 'El nombre debe tener al menos 2 caracteres')
-      .trim(),
+      .transform(stripText)
+      .pipe(z.string().min(2, 'El nombre debe tener al menos 2 caracteres').max(80, 'El nombre supera los 80 caracteres')),
     last_name: z
       .string({ required_error: 'El apellido es obligatorio' })
-      .min(2, 'El apellido debe tener al menos 2 caracteres')
-      .trim(),
+      .transform(stripText)
+      .pipe(z.string().min(2, 'El apellido debe tener al menos 2 caracteres').max(80, 'El apellido supera los 80 caracteres')),
     dni: z
       .string({ required_error: 'El DNI es obligatorio' })
       .transform((val) => val.replace(/[\.\s-]/g, ''))
@@ -81,7 +83,7 @@ export const createAlumnoSchema = z
     course: z.string().optional().nullable().default(''),
     course_name: z.string().optional().nullable().default(''),
     academic_level: z.string().optional().nullable().default('Secundario'),
-    address: z.string().optional().nullable().default(''),
+    address: z.string().transform((value) => stripText(value)).optional().nullable().default(''),
     dob: z.string().optional().nullable().default(''),
     gender: z.string().optional().nullable().default(''),
     nacionality: z.string().optional().nullable().default('Argentina'),
@@ -106,12 +108,19 @@ export const createAlumnoSchema = z
       })
       .pipe(z.enum(['alumno', 'postulante']))
       .optional(),
-    profile_photo_url: z.string().max(2048).optional().nullable(),
+    profile_photo_url: z.string().max(2048).optional().nullable().refine(
+      (value) => value == null || isAllowedPhotoUrl(value),
+      { message: 'La URL de la foto no está permitida' },
+    ),
     accepted_terms: z.boolean().optional(),
     acceptedTerms: z.boolean().optional(),
     attendance_token: z.string().max(255).optional().nullable(),
   })
   .strict()
+  .refine(
+    (data) => !dobError(data.dob),
+    { message: 'La fecha de nacimiento no es válida o es futura', path: ['dob'] },
+  )
   .refine(
     (data) => {
       if (!data.phone || !data.extra_phone) return true
@@ -134,8 +143,8 @@ export const createAlumnoSchema = z
  */
 export const updateAlumnoSchema = z
   .object({
-    first_name: z.string().min(2, 'El nombre debe tener al menos 2 caracteres').trim().optional(),
-    last_name: z.string().min(2, 'El apellido debe tener al menos 2 caracteres').trim().optional(),
+    first_name: z.string().transform(stripText).pipe(z.string().min(2, 'El nombre debe tener al menos 2 caracteres').max(80)).optional(),
+    last_name: z.string().transform(stripText).pipe(z.string().min(2, 'El apellido debe tener al menos 2 caracteres').max(80)).optional(),
     dni: z
       .string()
       .transform((val) => val.replace(/[\.\s-]/g, ''))
@@ -154,7 +163,7 @@ export const updateAlumnoSchema = z
     course: z.string().optional().nullable(),
     course_name: z.string().optional().nullable(),
     academic_level: z.string().optional().nullable(),
-    address: z.string().optional().nullable(),
+    address: z.string().transform((value) => stripText(value)).optional().nullable(),
     dob: z.string().optional().nullable(),
     gender: z.string().optional().nullable(),
     nacionality: z.string().optional().nullable(),
@@ -178,12 +187,19 @@ export const updateAlumnoSchema = z
       })
       .pipe(z.enum(['alumno', 'postulante']))
       .optional(),
-    profile_photo_url: z.string().max(2048).optional().nullable(),
+    profile_photo_url: z.string().max(2048).optional().nullable().refine(
+      (value) => value == null || isAllowedPhotoUrl(value),
+      { message: 'La URL de la foto no está permitida' },
+    ),
     accepted_terms: z.boolean().optional(),
     acceptedTerms: z.boolean().optional(),
     attendance_token: z.string().max(255).optional().nullable(),
   })
   .strict()
+  .refine(
+    (data) => !dobError(data.dob),
+    { message: 'La fecha de nacimiento no es válida o es futura', path: ['dob'] },
+  )
   .refine(
     (data) => {
       if (!data.phone || !data.extra_phone) return true

@@ -1,4 +1,5 @@
 import 'dotenv/config'
+import path from 'node:path'
 import express from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
@@ -120,8 +121,21 @@ app.use((req, res, next) => {
     credentials: true,
   })(req, res, next)
 })
-app.use(express.json({ limit: '32kb' }))
+const jsonParser = express.json({ limit: '32kb' })
+const profileJsonParser = express.json({ limit: '3mb' })
+app.use((req, res, next) => {
+  if (req.method === 'PATCH' && req.path === '/api/auth/me') {
+    return profileJsonParser(req, res, next)
+  }
+  return jsonParser(req, res, next)
+})
 app.use(express.urlencoded({ extended: true, limit: '32kb' }))
+app.use('/uploads', express.static(path.resolve(process.cwd(), 'uploads'), {
+  dotfiles: 'deny',
+  index: false,
+  fallthrough: false,
+  maxAge: '1h',
+}))
 
 app.get('/health', (req, res) => {
   res.json({

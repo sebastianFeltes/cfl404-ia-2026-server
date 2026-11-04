@@ -1,9 +1,22 @@
 import { OAuth2Client } from 'google-auth-library'
 import prisma from '../lib/prisma.js'
 import { parseAcceptedTerms } from '../lib/accepted-terms.js'
-import { assertAllowedPhotoUrl } from '../lib/photo-url.js'
+import { storeProfilePhoto } from '../lib/profile-photo.js'
+import {
+    ACADEMIC_LEVELS,
+    GENDERS,
+    cleanAddress,
+    cleanChoice,
+    cleanDni,
+    cleanDob,
+    cleanEmail,
+    cleanNationality,
+    cleanPersonName,
+    cleanPhone,
+    stripText,
+} from '../lib/profile-input.js'
 import { DEV_LOGIN_ACCOUNTS, isDevLoginEnabled } from '../lib/dev-login.js'
-import { normalizeDni, passwordError, passwordsMatch } from '../lib/password.js'
+import { passwordError, passwordsMatch } from '../lib/password.js'
 import { assignApplicantNumber } from '../lib/enrollment.js'
 import {
     ACCESS_COOKIE,
@@ -296,11 +309,18 @@ export const loginWithGoogle = async (req, res, next) => {
 
 export const loginWithPassword = async (req, res, next) => {
     try {
-        const dni = normalizeDni(req.body?.dni ?? req.body?.username)
+        const rawDni = req.body?.dni ?? req.body?.username
         const password = req.body?.password
 
-        if (!dni) {
+        if (rawDni == null || String(rawDni).trim() === '') {
             return res.status(400).json({ error: 'Ingresá tu DNI' })
+        }
+
+        let dni
+        try {
+            dni = cleanDni(rawDni, { required: true })
+        } catch (error) {
+            return res.status(error.statusCode || 400).json({ error: error.message })
         }
 
         const policyError = passwordError(password)
@@ -518,39 +538,30 @@ export const updateMyProfile = async (req, res, next) => {
         }
 
         const data = {}
+        const isPostulante = String(record.user.role?.name || '').toLowerCase() === 'postulante'
 
-        if (firstName !== undefined) {
-            const value = String(firstName).trim()
-            if (!value) {
-                return res.status(400).json({ error: 'El nombre no puede estar vacío' })
-            }
-            data.firstName = value
-        }
+        try {
+            if (firstName !== undefined) data.firstName = cleanPersonName(firstName, 'El nombre')
+            if (lastName !== undefined) data.lastName = cleanPersonName(lastName, 'El apellido')
 
-        if (lastName !== undefined) {
-            const value = String(lastName).trim()
-            if (!value) {
-                return res.status(400).json({ error: 'El apellido no puede estar vacío' })
-            }
-            data.lastName = value
-        }
-
-        if (rawDni !== undefined) {
-            const value = String(rawDni).trim()
-            if (!value) {
-                data.dni = null
-            } else if (value.length < 6 || value.length > 20) {
-                return res.status(400).json({ error: 'El DNI debe tener entre 6 y 20 caracteres' })
-            } else if (await dniBelongsToSomeoneElse(value, id)) {
-                return res.status(409).json({ error: 'Ese DNI ya está registrado en el sistema' })
-            } else {
+            if (rawDni !== undefined) {
+                const value = cleanDni(rawDni, { required: isPostulante })
+                if (value && await dniBelongsToSomeoneElse(value, id)) {
+                    return res.status(409).json({ error: 'Ese DNI ya está registrado en el sistema' })
+                }
                 data.dni = value
             }
-        }
 
-        if (profilePhotoUrl !== undefined) {
-            assertAllowedPhotoUrl(profilePhotoUrl)
-            data.profilePhotoUrl = profilePhotoUrl || null
+            if (profilePhotoUrl !== undefined) {
+                const next = typeof profilePhotoUrl === 'string' ? profilePhotoUrl.trim() : profilePhotoUrl
+                const current = String(record.user.profilePhotoUrl || '').trim()
+                if (String(next || '') !== current) {
+                    data.profilePhotoUrl = await storeProfilePhoto(id, next)
+                }
+            }
+        } catch (error) {
+            if (error.statusCode) return res.status(error.statusCode).json({ error: error.message })
+            throw error
         }
 
         if (rawAcceptedTerms !== undefined) {
@@ -563,23 +574,39 @@ export const updateMyProfile = async (req, res, next) => {
 
         const phone = body.phone ?? body.telefono
         const address = body.address ?? body.direccion
-        const academicLevel = body.academicLevel ?? body.academic_level ?? body.nivelAcademico
+        const academicLevel = body.academicLevel ?? body.academic_level ?? body.nivelAcademico ?? body.nivelEducacion
         const gender = body.gender ?? body.genero
         const nacionality = body.nacionality ?? body.nacionalidad
-        const extraPhone = body.extraPhone ?? body.extra_phone ?? body.telefonoEmergencia
+        const extraPhone = body.extraPhone ?? body.extra_phone ?? body.telefonoEmergencia ?? body.telefonoSecundario
         const extraEmail = body.extraEmail ?? body.extra_email ?? body.emailEmergencia
         const dob = body.dob ?? body.fechaNacimiento
 
         const detailData = {}
-        if (phone !== undefined) detailData.phone = phone || null
-        if (address !== undefined) detailData.address = address || null
-        if (academicLevel !== undefined) detailData.academicLevel = academicLevel || 'Secundario'
-        if (gender !== undefined) detailData.gender = gender || null
-        if (nacionality !== undefined) detailData.nacionality = nacionality || 'Argentina'
-        if (extraPhone !== undefined) detailData.extraPhone = extraPhone || null
-        if (extraEmail !== undefined) detailData.extraEmail = extraEmail || null
-        if (dob !== undefined) {
-            detailData.dob = dob ? new Date(dob) : null
+        try {
+            if (phone !== undefined) detailData.phone = cleanPhone(phone, 'El teléfono', { required: isPostulante })
+            if (extraPhone !== undefined) detailData.extraPhone = cleanPhone(extraPhone, 'El teléfono alternativo')
+            if (detailData.phone && detailData.extraPhone && detailData.phone === detailData.extraPhone) {
+                return res.status(400).json({ error: 'El teléfono alternativo tiene que ser distinto' })
+            }
+            if (address !== undefined) detailData.address = cleanAddress(address, { required: isPostulante })
+            if (academicLevel !== undefined) {
+                const currentLevel = record.user.userDetail?.academicLevel || ''
+                detailData.academicLevel = stripText(academicLevel) === stripText(currentLevel) && currentLevel
+                    ? currentLevel
+                    : cleanChoice(academicLevel, ACADEMIC_LEVELS, 'El nivel de educación') || 'Secundario'
+            }
+            if (gender !== undefined) {
+                const currentGender = record.user.userDetail?.gender || ''
+                detailData.gender = stripText(gender) === stripText(currentGender)
+                    ? (currentGender || null)
+                    : cleanChoice(gender, GENDERS, 'El género')
+            }
+            if (nacionality !== undefined) detailData.nacionality = cleanNationality(nacionality)
+            if (extraEmail !== undefined) detailData.extraEmail = cleanEmail(extraEmail)
+            if (dob !== undefined) detailData.dob = cleanDob(dob, { required: isPostulante })
+        } catch (error) {
+            if (error.statusCode) return res.status(error.statusCode).json({ error: error.message })
+            throw error
         }
 
         if (Object.keys(detailData).length > 0) {

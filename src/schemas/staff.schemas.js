@@ -1,17 +1,16 @@
 import { z } from 'zod'
+import { stripText } from '../lib/profile-input.js'
 
 // Schema para crear un nuevo instructor (POST)
 export const createStaffSchema = z.object({
     first_name: z
         .string({ required_error: 'El nombre es obligatorio' })
-        .min(2, 'El nombre debe tener al menos 2 caracteres')
-        .max(100, 'El nombre no puede exceder 100 caracteres')
-        .trim(),
+        .transform(stripText)
+        .pipe(z.string().min(2, 'El nombre debe tener al menos 2 caracteres').max(80, 'El nombre no puede exceder 80 caracteres')),
     last_name: z
         .string({ required_error: 'El apellido es obligatorio' })
-        .min(2, 'El apellido debe tener al menos 2 caracteres')
-        .max(100, 'El apellido no puede exceder 100 caracteres')
-        .trim(),
+        .transform(stripText)
+        .pipe(z.string().min(2, 'El apellido debe tener al menos 2 caracteres').max(80, 'El apellido no puede exceder 80 caracteres')),
     email: z
         .string({ required_error: 'El email es obligatorio' })
         .email('El email no es válido')
@@ -19,9 +18,8 @@ export const createStaffSchema = z.object({
         .toLowerCase(),
     dni: z
         .string({ required_error: 'El DNI es obligatorio' })
-        .min(6, 'El DNI debe tener al menos 6 caracteres')
-        .max(20, 'El DNI no puede exceder 20 caracteres')
-        .trim(),
+        .transform((value) => String(value).replace(/\D/g, ''))
+        .pipe(z.string().regex(/^\d{7,8}$/, 'El DNI debe tener 7 u 8 dígitos')),
     status_id: z
         .number({ required_error: 'El estado es obligatorio' })
         .int('El estado debe ser un número entero')
@@ -38,14 +36,16 @@ export const createStaffSchema = z.object({
         .default(7),
     phone: z
         .string()
-        .max(30, 'El teléfono no puede exceder 30 caracteres')
-        .trim()
+        .transform((value) => stripText(value).replace(/\D/g, ''))
+        .pipe(z.string().refine((value) => value === '' || (value.length >= 8 && value.length <= 15), {
+            message: 'El teléfono debe tener entre 8 y 15 dígitos',
+        }))
         .optional()
         .nullable(),
     address: z
         .string()
-        .max(200, 'La dirección no puede exceder 200 caracteres')
-        .trim()
+        .transform(stripText)
+        .pipe(z.string().max(160, 'La dirección no puede exceder 160 caracteres'))
         .optional()
         .nullable(),
     profile_photo_url: z
