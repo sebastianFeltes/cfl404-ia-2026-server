@@ -23,6 +23,27 @@ const isProduction = process.env.NODE_ENV === 'production'
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
   crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+/* cors inseguro a proposito para live test */
+contentSecurityPolicy: {
+    directives: {
+      ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+      "connect-src": [
+        "'self'", 
+        "http://192.168.33.104:4000", 
+        "http://192.168.33.104:5173", 
+        "http://192.168.33.104:5174", 
+        "ws://192.168.33.104:5173", 
+        "wss://192.168.33.104:5173", 
+        "https://accounts.google.com"
+      ],
+      "script-src": ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://accounts.google.com"],
+      "style-src": ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      "font-src": ["'self'", "https://fonts.gstatic.com"],
+      "frame-src": ["'self'", "https://maps.google.com", "https://*.google.com"],
+    },
+  },
+/* ----- */
+
 }))
 app.use(morgan(isProduction ? 'tiny' : 'dev'))
 app.use((req, _res, next) => {
