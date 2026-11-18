@@ -13,7 +13,7 @@ function createPrisma() {
     return new PrismaClient({ adapter: new PrismaPg(url) })
   }
   return new PrismaClient({
-    adapter: new PrismaBetterSqlite3({ url, timeout: 10000 }),
+    adapter: new PrismaBetterSqlite3({ url, timeout: 30000 }),
   })
 }
 
