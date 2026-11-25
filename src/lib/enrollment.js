@@ -1,5 +1,6 @@
 import prisma from './prisma.js'
 import { parseStartTimeMinutes } from './attendance-time.js'
+import { ensureStatusCatalog, isBajaStatus } from './status-catalog.js'
 
 export class EnrollmentError extends Error {
   constructor(statusCode, message, details = {}) {
@@ -204,13 +205,14 @@ export async function preinscribir({ userId, courseId, requireProfile = true }, 
     }
 
     const position = await nextPosition(courseId, tx)
+    const enrollmentStatusId = await statusIdByName('pendiente', tx)
     const enrollment = existing
       ? await tx.userCourse.update({
         where: { id: existing.id },
-        data: { occupiesQuota: true, position },
+        data: { occupiesQuota: true, position, statusId: enrollmentStatusId },
       })
       : await tx.userCourse.create({
-        data: { userId, courseId, occupiesQuota: true, position },
+        data: { userId, courseId, occupiesQuota: true, position, statusId: enrollmentStatusId },
       })
 
     const enrollmentStatus = await syncCourseEnrollmentStatus(courseId, tx)
@@ -232,7 +234,50 @@ export async function asignarCurso(args, db = prisma) {
   return preinscribir({ ...args, requireProfile: false }, db)
 }
 
-export async function liberarCupo({ userId, courseId } = {}, db = prisma) {
+async function statusIdIfPresent(name, db) {
+  const status = await client(db).status.findUnique({ where: { name } })
+  if (status) return status.id
+  await ensureStatusCatalog(client(db))
+  return (await client(db).status.findUnique({ where: { name } }))?.id ?? null
+}
+
+function calendarDay(value) {
+  const date = new Date(value)
+  return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate())
+}
+
+async function promoteNextInLine(courseId, afterPosition, db) {
+  const store = client(db)
+  const course = await store.course.findUnique({
+    where: { id: courseId },
+    include: { courseDetail: true },
+  })
+  if (!course) return null
+  const quota = course.courseDetail?.quota ?? 0
+  const occupied = await countOccupiedSeats(courseId, store)
+  if (!(quota > 0) || occupied >= quota) return null
+  const waiting = await store.userCourse.findMany({
+    where: {
+      courseId,
+      occupiesQuota: false,
+      position: { gt: afterPosition },
+    },
+    include: { status: true },
+    orderBy: { position: 'asc' },
+  })
+  const next = waiting.find((row) => !isBajaStatus(row.status?.name))
+  if (!next) return null
+  const pendienteId = await statusIdIfPresent('pendiente', store)
+  return store.userCourse.update({
+    where: { id: next.id },
+    data: {
+      occupiesQuota: true,
+      ...(pendienteId ? { statusId: pendienteId } : {}),
+    },
+  })
+}
+
+export async function liberarCupo({ userId, courseId, statusName = 'baja_manual', revertToPostulante = false } = {}, db = prisma) {
   const store = client(db)
   const where = { userId, occupiesQuota: true }
   if (courseId) where.courseId = courseId
@@ -242,17 +287,80 @@ export async function liberarCupo({ userId, courseId } = {}, db = prisma) {
   })
   if (!rows.length) return { released: 0, positions: [] }
 
+  const bajaId = await statusIdIfPresent(statusName, store)
   await store.userCourse.updateMany({
     where: { id: { in: rows.map((row) => row.id) } },
-    data: { occupiesQuota: false },
+    data: {
+      occupiesQuota: false,
+      ...(bajaId ? { statusId: bajaId } : {}),
+    },
   })
+
+  const stillOccupying = await store.userCourse.count({
+    where: { userId, occupiesQuota: true },
+  })
+  if (revertToPostulante && stillOccupying === 0) {
+    const person = await store.user.findUnique({
+      where: { id: userId },
+      include: { role: true },
+    })
+    if (person?.role?.name === 'alumno') {
+      const postulante = await store.role.findFirst({ where: { name: 'postulante' } })
+      const pendienteId = await statusIdIfPresent('pendiente', store)
+      if (postulante) {
+        await store.user.update({
+          where: { id: userId },
+          data: {
+            roleId: postulante.id,
+            ...(pendienteId ? { statusId: pendienteId } : {}),
+          },
+        })
+      }
+    }
+  }
 
   const courseIds = [...new Set(rows.map((row) => row.courseId))]
   for (const id of courseIds) {
+    const releasedHere = rows.filter((row) => row.courseId === id)
+    const afterPosition = Math.max(...releasedHere.map((row) => row.position))
     await syncCourseEnrollmentStatus(id, store)
+    await promoteNextInLine(id, afterPosition, store)
     await promoteWaiting(id, store)
   }
   return { released: rows.length, positions: rows.map((row) => row.position) }
+}
+
+export async function releaseUnconfirmedOrders(now = new Date(), db = prisma) {
+  const store = client(db)
+  const courses = await store.course.findMany({
+    where: { startDate: { not: null } },
+    select: { id: true, startDate: true },
+  })
+  const today = calendarDay(now)
+  let released = 0
+  for (const course of courses) {
+    const dayIndex = Math.floor((today - calendarDay(course.startDate)) / 86400000)
+    if (dayIndex < 0) continue
+    const order = dayIndex + 1
+    const rows = await store.userCourse.findMany({
+      where: {
+        courseId: course.id,
+        occupiesQuota: true,
+        position: order,
+        user: { role: { name: 'postulante' } },
+      },
+      select: { userId: true },
+    })
+    for (const row of rows) {
+      const result = await liberarCupo({
+        userId: row.userId,
+        courseId: course.id,
+        statusName: 'baja_requisito',
+      }, store)
+      released += result.released
+    }
+  }
+  return { released }
 }
 
 const READY_WINDOW_MS = 10 * 60 * 1000

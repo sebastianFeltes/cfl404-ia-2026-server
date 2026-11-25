@@ -15,6 +15,7 @@ import {
   DEFAULT_COOPERADORA,
   MOBILE_SETTING_KEYS,
 } from '../src/lib/mobile-content.js'
+import { ensureStatusCatalog } from '../src/lib/status-catalog.js'
 
 const MOCK_STUDENTS_SEED = [
   {
@@ -201,23 +202,7 @@ async function main() {
     await upsertCatalog(prisma.role, role, 'Rol')
   }
 
-  const statusesData = [
-    { id: STATUSES.ACTIVO, name: 'activo' },
-    { id: STATUSES.INACTIVO, name: 'inactivo' },
-    { id: STATUSES.PENDIENTE, name: 'pendiente' },
-    { id: STATUSES.EGRESADO, name: 'egresado' },
-    { id: STATUSES.SUSPENDIDO, name: 'suspendido' },
-    { id: STATUSES.BLOQUEADO, name: 'bloqueado' },
-    { id: STATUSES.ELIMINADO, name: 'eliminado' },
-    { id: STATUSES.INSCRIPCION_ABIERTA, name: 'inscripcion_abierta' },
-    { id: STATUSES.ULTIMOS_CUPOS, name: 'ultimos_cupos' },
-    { id: STATUSES.CUPO_COMPLETO, name: 'cupo_completo' },
-    { id: STATUSES.CURSO_FINALIZADO, name: 'curso_finalizado' },
-  ]
-
-  for (const status of statusesData) {
-    await upsertCatalog(prisma.status, status, 'Status')
-  }
+  await ensureStatusCatalog(prisma)
 
   const classroomsData = [
     { capacity: 45, name: 'aula 1' },

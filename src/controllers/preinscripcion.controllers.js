@@ -73,8 +73,8 @@ export const getPreinscripcionTurno = async (req, res, next) => {
 export const createPreinscripcion = async (req, res, next) => {
   try {
     const roleName = String(req.user?.role || '').toLowerCase()
-    if (roleName !== 'postulante') {
-      return res.status(403).json({ error: 'Solo un postulante puede preinscribirse' })
+    if (roleName !== 'postulante' && roleName !== 'alumno') {
+      return res.status(403).json({ error: 'Solo un alumno o un postulante puede preinscribirse' })
     }
     const courseId = String(req.body?.courseId || '').trim()
     if (!courseId) return res.status(400).json({ error: 'Falta courseId' })

@@ -71,6 +71,7 @@ const studentInclude = {
   userDetail: true,
   userCourses: {
     include: {
+      status: true,
       course: {
         include: {
           instructor: true,
@@ -108,9 +109,11 @@ function formatStudent(s) {
       courseId: row.courseId,
       name: row.course.name,
       schedule: formatCourseSchedule(row.course),
+      position: row.position,
+      enrollment_status: row.status?.name || null,
     }))
     .sort((a, b) => a.name.localeCompare(b.name, 'es'))
-  const primaryUserCourse = (s.userCourses || []).find((row) => row.occupiesQuota !== false && row.course) || s.userCourses?.[0]
+  const primaryUserCourse = (s.userCourses || []).find((row) => row.occupiesQuota !== false && row.course) || null
   const courseObj = primaryUserCourse?.course
   const activeCourse = courseObj?.name || 'Sin curso asignado'
   const statusText = STATUS_MAP[s.statusId] || String(s.status?.name || 'activo').toLowerCase()
@@ -146,6 +149,8 @@ function formatStudent(s) {
     academic_level: s.userDetail?.academicLevel || 'Secundario',
     course_name: occupyingCourses[0]?.name || activeCourse,
     course: occupyingCourses[0]?.name || activeCourse,
+    queue_position: primaryUserCourse?.position ?? null,
+    enrollment_status: primaryUserCourse?.status?.name || null,
     courses: occupyingCourses,
     instructor_name: instructorName,
     course_schedule: schedule,
@@ -562,7 +567,7 @@ export const releaseAlumnoCourse = async (req, res, next) => {
       return res.status(404).json({ error: 'Alumno no encontrado' })
     }
 
-    const result = await liberarCupo({ userId: id, courseId })
+    const result = await liberarCupo({ userId: id, courseId, revertToPostulante: true })
     if (!result.released) {
       return res.status(404).json({ error: 'Esa persona no tiene cupo en ese curso' })
     }

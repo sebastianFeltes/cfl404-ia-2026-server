@@ -1,4 +1,5 @@
 import prisma from './prisma.js'
+import { releaseUnconfirmedOrders } from './enrollment.js'
 import {
   getArgentinaDateKey,
   getArgentinaDayBoundsUtc,
@@ -67,6 +68,9 @@ export function startAttendanceCron() {
   const tick = () => {
     markLateAbsences().catch((error) => {
       console.error('[attendance-cron]', error)
+    })
+    releaseUnconfirmedOrders().catch((error) => {
+      console.error('[enrollment-orders]', error)
     })
   }
   tick()

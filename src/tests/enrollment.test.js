@@ -3,7 +3,8 @@ import { after, describe, test } from 'node:test'
 import prisma from '../lib/prisma.js'
 import { databaseDriver } from '../lib/prisma.js'
 import { shouldSkipGlobalRateLimit } from '../app.js'
-import { countOccupiedSeats, syncCourseEnrollmentStatus } from '../lib/enrollment.js'
+import { countOccupiedSeats, liberarCupo, releaseUnconfirmedOrders, syncCourseEnrollmentStatus } from '../lib/enrollment.js'
+import { ensureStatusCatalog } from '../lib/status-catalog.js'
 
 const createdUserIds = []
 const createdCourseIds = []
@@ -130,5 +131,83 @@ describe('pico', () => {
     assert.equal(shouldSkipGlobalRateLimit({ method: 'GET', path: '/courses' }), true)
     assert.equal(shouldSkipGlobalRateLimit({ method: 'POST', path: '/api/v1/preinscripciones' }), true)
     assert.equal(shouldSkipGlobalRateLimit({ method: 'POST', path: '/api/v1/alumnos' }), false)
+  })
+})
+
+describe('matricula', () => {
+  test('el catalogo distingue persona, curso e inscripcion', async () => {
+    await ensureStatusCatalog()
+    const baja = await prisma.status.findUnique({ where: { name: 'baja_requisito' } })
+    const persona = await prisma.status.findUnique({ where: { name: 'activo' } })
+    const curso = await prisma.status.findUnique({ where: { name: 'inscripcion_abierta' } })
+    assert.equal(baja.context, 'inscripcion')
+    assert.equal(persona.context, 'persona')
+    assert.equal(curso.context, 'curso')
+  })
+
+  test('desvincular el unico curso devuelve a la persona a postulante', async () => {
+    await ensureStatusCatalog()
+    const course = await makeCourse({ quota: 2 })
+    const user = await makeUser('activo')
+    await enroll(user.id, course.id, true)
+    const result = await liberarCupo({ userId: user.id, courseId: course.id, revertToPostulante: true })
+    assert.equal(result.released, 1)
+    const stored = await prisma.user.findUnique({
+      where: { id: user.id },
+      include: { role: true, userCourses: { include: { status: true } } },
+    })
+    assert.equal(stored.role.name, 'postulante')
+    assert.equal(stored.userCourses[0].occupiesQuota, false)
+    assert.equal(stored.userCourses[0].status.name, 'baja_manual')
+  })
+
+  test('liberar un cupo al cambiar de curso no baja el rol', async () => {
+    await ensureStatusCatalog()
+    const course = await makeCourse({ quota: 2 })
+    const user = await makeUser('activo')
+    await enroll(user.id, course.id, true)
+    await liberarCupo({ userId: user.id, courseId: course.id })
+    const stored = await prisma.user.findUnique({
+      where: { id: user.id },
+      include: { role: true },
+    })
+    assert.equal(stored.role.name, 'alumno')
+  })
+
+  test('el dia de inicio baja la primera orden y llama a la siguiente', async () => {
+    await ensureStatusCatalog()
+    const now = new Date()
+    const course = await prisma.course.create({
+      data: {
+        name: `Orden test ${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        statusId: await statusId('inscripcion_abierta'),
+        instructorId: await instructorId(),
+        maxAbsences: 4,
+        startDate: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12),
+        courseDetail: { create: { quota: 1, hourQuantity: 1, classesQuantity: 1 } },
+      },
+    })
+    createdCourseIds.push(course.id)
+    const first = await makeUser('pendiente')
+    const postulante = await prisma.role.findFirst({ where: { name: 'postulante' } })
+    assert.ok(postulante, 'falta el rol postulante')
+    await prisma.user.update({ where: { id: first.id }, data: { roleId: postulante.id } })
+    const second = await makeUser('pendiente')
+    await prisma.userCourse.create({
+      data: { userId: first.id, courseId: course.id, occupiesQuota: true, position: 1 },
+    })
+    await prisma.userCourse.create({
+      data: { userId: second.id, courseId: course.id, occupiesQuota: false, position: 2 },
+    })
+    const result = await releaseUnconfirmedOrders(now)
+    assert.equal(result.released, 1)
+    const rows = await prisma.userCourse.findMany({
+      where: { courseId: course.id },
+      include: { status: true },
+      orderBy: { position: 'asc' },
+    })
+    assert.equal(rows[0].occupiesQuota, false)
+    assert.equal(rows[0].status.name, 'baja_requisito')
+    assert.equal(rows[1].occupiesQuota, true)
   })
 })

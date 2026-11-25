@@ -160,16 +160,19 @@ model UserCourse {
   courseId      String       @map("course_id")
   occupiesQuota Boolean      @default(true) @map("occupies_quota")
   position      Int          @default(0)
+  statusId      Int?         @map("status_id")
   createdAt     DateTime     @default(now()) @map("created_at")
   updatedAt     DateTime     @updatedAt @map("updated_at")
 
   user        User         @relation(fields: [userId], references: [id])
   course      Course       @relation(fields: [courseId], references: [id])
+  status      Status?      @relation(fields: [statusId], references: [id])
   attendances Attendance[]
 
   @@unique([userId, courseId])
   @@index([courseId, occupiesQuota])
   @@index([courseId, position])
+  @@index([statusId])
   @@map("user_course")
 }
 
@@ -229,12 +232,14 @@ model Role {
 }
 
 model Status {
-  id        Int      @id @default(autoincrement())
-  name      String   @unique
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  users     User[]
-  courses   Course[]
+  id          Int          @id @default(autoincrement())
+  name        String       @unique
+  context     String       @default("general")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  users       User[]
+  courses     Course[]
+  userCourses UserCourse[]
 
   @@map("status")
 }
