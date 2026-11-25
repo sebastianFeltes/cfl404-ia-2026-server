@@ -1,0 +1,32 @@
+
+23/10/2026: correcciones.
+
+Poner la version del Footer.
+El menu hamburguesa en mobile que la hamburguesa se haga la x y que salga de derecha a izquierda.
+Acepto termino y condiciones habilite o desabilite el boton de ingreso.
+alumnos: formulario carga input fecha, select de cursos no datos reales
+Ingresar un valor valido cuando entras en nuevo registro de buffet: sale un cartel que dice ingresa un valor valido. Los dos valores validos mas aproximados son 499901 y 500001.
+Alumnos y matricula: arreglar los botones.
+
+
+6/11/2026:
+
+El boton de credencial no copia el token para la asistencia.
+Una vez inscripto en el modal de curso mostrar el numero de orden y numero de inscripto.
+Si el client esta en uan ruta por mas de 15 segundos hacer un get a la misma ruta.
+En el dashboard de alumno, el acceso rapido en la cursada actual no va donde tiene que ir. Ademas en el dashboard de alumno agregar el link a la aplicacion.
+Permitir que alumnos confirmados de un curso puedan ser postulantes de otros.
+Cambiar la validacion.
+
+login - error timeout se muestra en login, catchear error y mostrar generico
+
+18/11/2026:
+
+En alumnos sea posible desvincular un curso de un alumno y hacer al alumno postulante nuevamente.
+A los postulantes si son de la primera orden llegado el dia del inicio del curso se los desvincula para darle lugar a los que siguen. Los que siguen son de la segunda orden. Si los de la segunda orden no entregan los papeles el segundo dia les pasa lo mismo, y asi consecutivamente.
+Agregar un campo que diga status_id en la tabla user_course en el db browser.
+Para lista de espera que llame a (ultimo +1) tras liberarse un cupo. En el modulo postulantes se ordenen los que estan para llamar.
+En la tabla estados para las distintas bajas: baja por requisito, baja manual, baja por inasistencia.
+Los que quedaron en lista de espera que se pueda visualizar en que numero quedaste, ya sea primero, segundo, etc.
+Agregar contexto a la tabla status.
+
